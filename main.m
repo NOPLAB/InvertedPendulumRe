@@ -1,6 +1,13 @@
 %% main.m - 倒立振子制御シミュレーション（LQR vs PID）
 clear; close all; clc;
 
+%% 0. パス設定
+rootDir = fileparts(which(mfilename));
+addpath(fullfile(rootDir, 'plant'));
+addpath(fullfile(rootDir, 'control'));
+addpath(fullfile(rootDir, 'sim'));
+addpath(fullfile(rootDir, 'simulink'));
+
 %% 1. パラメータ読込
 p = params();
 

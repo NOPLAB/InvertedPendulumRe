@@ -4,6 +4,13 @@ function run_simulink_model()
 
     modelName = 'InvertedPendulum_Simulink';
 
+    % パス設定
+    scriptDir = fileparts(mfilename('fullpath'));
+    rootDir   = fileparts(scriptDir);
+    addpath(fullfile(rootDir, 'plant'));
+    addpath(fullfile(rootDir, 'control'));
+    addpath(fullfile(rootDir, 'sim'));
+
     % === 1. パラメータ準備 ===
     p = params();
     [A, B, ~, ~] = linearize_system(p);

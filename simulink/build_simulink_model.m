@@ -134,9 +134,11 @@ function build_simulink_model()
     add_line(modelName, 'Controller_Switch/1', 'Control_Scope/1', ar{:});
     add_line(modelName, 'Controller_Switch/1', 'To_WS_u/1', ar{:});
 
-    % 保存
-    save_system(modelName);
-    fprintf('モデル "%s.slx" を生成しました。\n', modelName);
+    % 保存（スクリプトと同じディレクトリに .slx を配置）
+    scriptDir = fileparts(mfilename('fullpath'));
+    slxPath = fullfile(scriptDir, modelName);
+    save_system(modelName, slxPath);
+    fprintf('モデル "%s.slx" を生成しました。\n', slxPath);
 end
 
 

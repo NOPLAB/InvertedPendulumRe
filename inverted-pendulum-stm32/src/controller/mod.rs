@@ -38,14 +38,16 @@ pub struct ProcessedState {
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum ControlMode {
-    Pid = 0,
-    Lqr = 1,
+    Debug = 0,
+    Pid = 1,
+    Lqr = 2,
 }
 
 impl ControlMode {
     pub fn from_u8(val: u8) -> Self {
         match val {
-            0 => ControlMode::Pid,
+            0 => ControlMode::Debug,
+            1 => ControlMode::Pid,
             _ => ControlMode::Lqr,
         }
     }
@@ -113,6 +115,7 @@ impl ControlSystem {
             self.mode = mode;
             // 新モードの内部状態をリセット
             match mode {
+                ControlMode::Debug => {}
                 ControlMode::Lqr => self.lqr.reset(),
                 ControlMode::Pid => self.pid_balance.reset(),
             }
@@ -145,6 +148,7 @@ impl ControlSystem {
 
         // モード依存: 力の計算
         let force = match self.mode {
+            ControlMode::Debug => 0.0,
             ControlMode::Lqr => self.lqr.compute_force(&processed),
             ControlMode::Pid => self.pid_balance.compute_force(&processed),
         };

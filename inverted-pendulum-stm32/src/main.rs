@@ -46,7 +46,7 @@ bind_interrupts!(struct Irqs {
 static QEI_R: AtomicI32 = AtomicI32::new(0);
 static QEI_L: AtomicI32 = AtomicI32::new(0);
 static RUNNING: AtomicBool = AtomicBool::new(false);
-static CONTROL_MODE: AtomicU8 = AtomicU8::new(1); // デフォルト: LQR (1)
+static CONTROL_MODE: AtomicU8 = AtomicU8::new(2); // デフォルト: LQR (2)
 
 /// LED点滅でモード番号を表示
 async fn blink_mode(led: &mut Output<'_>, count: u8) {
@@ -226,6 +226,8 @@ async fn control_task(mut motors: Motors) {
     let mut was_running = false;
     let mut balance_counter: u32 = 0;
     let mut current_mode = CONTROL_MODE.load(Ordering::Relaxed);
+    let mut debug_counter: u32 = 0;
+    const DEBUG_DECIMATION: u32 = 500; // 5kHz / 500 = 10Hz 表示
 
     loop {
         // モード変更検出
@@ -271,9 +273,25 @@ async fn control_task(mut motors: Motors) {
                     velocity_l,
                     current_r,
                     current_l,
-                    vin: 7.2, // TODO: read from ADC multiplexer
+                    vin: 12.0,
                 };
                 control_system.update_balance(&state);
+
+                // デバッグモード: センサー値を10Hzで表示
+                if current_mode == ControlMode::Debug as u8 {
+                    debug_counter += 1;
+                    if debug_counter >= DEBUG_DECIMATION / BALANCE_DECIMATION {
+                        debug_counter = 0;
+                        let pos = (position_r + position_l) / 2.0;
+                        let vel = (velocity_r + velocity_l) / 2.0;
+                        info!(
+                            "th={} pos={} vel={} qR={} qL={} iR={} iL={}",
+                            theta, pos, vel,
+                            qei_r - qei_r_offset, qei_l - qei_l_offset,
+                            current_r, current_l
+                        );
+                    }
+                }
             }
             balance_counter = (balance_counter + 1) % BALANCE_DECIMATION;
 
@@ -286,7 +304,7 @@ async fn control_task(mut motors: Motors) {
                 velocity_l: 0.0,
                 current_r,
                 current_l,
-                vin: 7.2,
+                vin: 12.0,
             };
             let output = control_system.update_current(&state);
             motors.set_both(output.left, output.right);

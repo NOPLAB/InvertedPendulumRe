@@ -17,7 +17,7 @@ pub const POT_ELECTRICAL_ANGLE: f32 = 333.3; // [deg]
 pub const POT_SUPPLY_VOLTAGE: f32 = 5.0;
 pub const VOLTAGE_DIVIDER_RATIO: f32 = ADC_VREF / POT_SUPPLY_VOLTAGE;
 pub const ADC_TO_RAD: f32 =
-    (POT_ELECTRICAL_ANGLE * (2.0 * core::f32::consts::PI / 360.0)) / VOLTAGE_DIVIDER_RATIO;
+    (POT_ELECTRICAL_ANGLE * (2.0 * core::f32::consts::PI / 360.0)) * VOLTAGE_DIVIDER_RATIO;
 
 // Current sensing
 pub const AMPLIFICATION_FACTOR: f32 = 150.0;
@@ -79,7 +79,7 @@ pub const BLINK_ON_MS: u64 = 150;
 pub const BLINK_OFF_MS: u64 = 150;
 
 // Control modes
-pub const NUM_MODES: u8 = 2;
+pub const NUM_MODES: u8 = 3;
 
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {

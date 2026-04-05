@@ -26,11 +26,9 @@ function run_simulink_model()
     fprintf('K_lqr = [%.4f, %.4f, %.4f, %.4f]\n', K_lqr);
     fprintf('x0 = [%.1f, %.1f, %.1f, %.1f]\n', x0);
 
-    % === 2. モデルが無ければ構築 ===
-    if ~exist([modelName '.slx'], 'file')
-        fprintf('モデルが見つかりません。構築中...\n');
-        build_simulink_model();
-    end
+    % === 2. モデルを毎回再生成して、設計パラメータとの不整合を防ぐ ===
+    fprintf('Simulink モデルを再生成します...\n');
+    build_simulink_model();
 
     % モデルを読み込み
     if ~bdIsLoaded(modelName)

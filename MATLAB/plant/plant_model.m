@@ -16,7 +16,9 @@ function dxdt = plant_model(~, x, u, p)
     m = p.m;
     l = p.l;
     g = p.g;
-    b = p.b;
+    % 非線形シミュレーションは台車方向の粘性摩擦を使う
+    % 注意: この簡略モデル自体は linearize_system.m の詳細モデルとは一致しない
+    b = p.bx;
 
     % 分母
     D = M + m - m * cos_th^2;

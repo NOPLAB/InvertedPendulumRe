@@ -38,6 +38,8 @@ use motor::Motors;
 bind_interrupts!(struct Irqs {
     ADC1_2 => embassy_stm32::adc::InterruptHandler<peripherals::ADC1>,
     embassy_stm32::adc::InterruptHandler<peripherals::ADC2>;
+    EXTI4 => embassy_stm32::exti::InterruptHandler<embassy_stm32::interrupt::typelevel::EXTI4>;
+    EXTI9_5 => embassy_stm32::exti::InterruptHandler<embassy_stm32::interrupt::typelevel::EXTI9_5>;
 });
 
 static QEI_R: AtomicI32 = AtomicI32::new(0);
@@ -66,51 +68,50 @@ async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(config);
 
     let mut led = Output::new(p.PB6, Level::Low, Speed::Low);
-    let mut button = ExtiInput::new(p.PB5, p.EXTI5, Pull::Up);
+    let mut button = ExtiInput::new(p.PB5, p.EXTI5, Pull::Up, Irqs);
 
     // ADC
-    let mut adc1 = Adc::new(p.ADC1, Irqs);
-    adc1.set_sample_time(embassy_stm32::adc::SampleTime::CYCLES601_5);
-    let mut adc2 = Adc::new(p.ADC2, Irqs);
-    adc2.set_sample_time(embassy_stm32::adc::SampleTime::CYCLES601_5);
+    let adc1 = Adc::new(p.ADC1, Irqs);
+    let adc2 = Adc::new(p.ADC2, Irqs);
 
-    spawner
-        .spawn(adc_task(
+    spawner.spawn(
+        adc_task(
             AdcSensors::new(adc1, adc2),
             p.PB0,
             p.PA5,
             p.PA7,
-        ))
-        .unwrap();
+        )
+        .unwrap(),
+    );
 
     // Encoders
     let qei_r = Qei::new(
-        ExtiInput::new(p.PA6, p.EXTI6, Pull::None),
-        ExtiInput::new(p.PA4, p.EXTI4, Pull::None),
+        ExtiInput::new(p.PA6, p.EXTI6, Pull::None, Irqs),
+        ExtiInput::new(p.PA4, p.EXTI4, Pull::None, Irqs),
         1000,
     );
     let qei_l = Qei::new(
-        ExtiInput::new(p.PA8, p.EXTI8, Pull::Up),
-        ExtiInput::new(p.PA9, p.EXTI9, Pull::Up),
+        ExtiInput::new(p.PA8, p.EXTI8, Pull::Up, Irqs),
+        ExtiInput::new(p.PA9, p.EXTI9, Pull::Up, Irqs),
         1000,
     );
-    spawner.spawn(encoder_r_task(qei_r)).unwrap();
-    spawner.spawn(encoder_l_task(qei_l)).unwrap();
+    spawner.spawn(encoder_r_task(qei_r).unwrap());
+    spawner.spawn(encoder_l_task(qei_l).unwrap());
 
     // Motors
     let motor_r = SimplePwm::new(
         p.TIM1,
         None,
         None,
-        Some(PwmPin::new_ch3(p.PA10, embassy_stm32::gpio::OutputType::PushPull)),
-        Some(PwmPin::new_ch4(p.PA11, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(p.PA10, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(p.PA11, embassy_stm32::gpio::OutputType::PushPull)),
         Hertz(MOTOR_PWM_FREQUENCY),
         embassy_stm32::timer::low_level::CountingMode::EdgeAlignedUp,
     );
     let motor_l_fwd = SimplePwm::new(
         p.TIM2,
         None,
-        Some(PwmPin::new_ch2(p.PA1, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(p.PA1, embassy_stm32::gpio::OutputType::PushPull)),
         None,
         None,
         Hertz(MOTOR_PWM_FREQUENCY),
@@ -121,13 +122,13 @@ async fn main(spawner: Spawner) {
         None,
         None,
         None,
-        Some(PwmPin::new_ch4(p.PB7, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(p.PB7, embassy_stm32::gpio::OutputType::PushPull)),
         Hertz(MOTOR_PWM_FREQUENCY),
         embassy_stm32::timer::low_level::CountingMode::EdgeAlignedUp,
     );
     let motors = Motors::new(motor_r, motor_l_fwd, motor_l_rev);
 
-    spawner.spawn(control_task(motors)).unwrap();
+    spawner.spawn(control_task(motors).unwrap());
 
     // Button: toggle control on/off
     loop {

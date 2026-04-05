@@ -1,5 +1,6 @@
 use embassy_futures::select;
 use embassy_stm32::exti::ExtiInput;
+use embassy_stm32::mode::Async;
 
 #[derive(Debug, Clone, Copy)]
 pub struct QeiState {
@@ -10,14 +11,14 @@ pub struct QeiState {
 }
 
 pub struct Qei<'a> {
-    chan_a: ExtiInput<'a>,
-    chan_b: ExtiInput<'a>,
+    chan_a: ExtiInput<'a, Async>,
+    chan_b: ExtiInput<'a, Async>,
     pulses_per_rev: i32,
     state: QeiState,
 }
 
 impl<'a> Qei<'a> {
-    pub fn new(chan_a: ExtiInput<'a>, chan_b: ExtiInput<'a>, pulses_per_rev: i32) -> Self {
+    pub fn new(chan_a: ExtiInput<'a, Async>, chan_b: ExtiInput<'a, Async>, pulses_per_rev: i32) -> Self {
         let a = if chan_a.is_high() { 1u8 } else { 0 };
         let b = if chan_b.is_high() { 1u8 } else { 0 };
         let init = (a << 1) | b;

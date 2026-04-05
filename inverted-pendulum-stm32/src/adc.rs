@@ -1,6 +1,6 @@
 use crate::constants::*;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
-use embassy_stm32::{adc::Adc, peripherals};
+use embassy_stm32::{adc::{Adc, SampleTime}, peripherals, Peri};
 
 pub struct AdcSensors {
     adc1: Adc<'static, peripherals::ADC1>,
@@ -17,13 +17,13 @@ impl AdcSensors {
 
     pub async fn read(
         &mut self,
-        theta_pin: &mut peripherals::PB0,
-        current_r_pin: &mut peripherals::PA5,
-        current_l_pin: &mut peripherals::PA7,
+        theta_pin: &mut Peri<'static, peripherals::PB0>,
+        current_r_pin: &mut Peri<'static, peripherals::PA5>,
+        current_l_pin: &mut Peri<'static, peripherals::PA7>,
     ) {
-        let theta_raw = self.adc1.read(theta_pin).await;
-        let current_r_raw = self.adc2.read(current_r_pin).await;
-        let current_l_raw = self.adc2.read(current_l_pin).await;
+        let theta_raw = self.adc1.read(theta_pin, SampleTime::CYCLES601_5).await;
+        let current_r_raw = self.adc2.read(current_r_pin, SampleTime::CYCLES601_5).await;
+        let current_l_raw = self.adc2.read(current_l_pin, SampleTime::CYCLES601_5).await;
 
         let packed = ((theta_raw as u32) << 16) | (current_r_raw as u32);
         ADC_DATA_HIGH.store(packed, Ordering::Relaxed);
@@ -71,9 +71,9 @@ pub fn get_currents() -> (f32, f32) {
 #[embassy_executor::task]
 pub async fn adc_task(
     mut sensors: AdcSensors,
-    mut theta_pin: peripherals::PB0,
-    mut current_r_pin: peripherals::PA5,
-    mut current_l_pin: peripherals::PA7,
+    mut theta_pin: Peri<'static, peripherals::PB0>,
+    mut current_r_pin: Peri<'static, peripherals::PA5>,
+    mut current_l_pin: Peri<'static, peripherals::PA7>,
 ) -> ! {
     loop {
         sensors

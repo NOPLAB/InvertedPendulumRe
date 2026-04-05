@@ -10,7 +10,7 @@ mod fmt;
 mod motor;
 mod pid;
 
-use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
@@ -19,8 +19,9 @@ use {defmt_rtt as _, panic_probe as _};
 
 use adc::{adc_task, calibrate_theta, get_currents, get_theta, AdcSensors};
 use constants::*;
-use controller::{Controller, State};
+use controller::{ControlMode, ControlSystem, State};
 use embassy_executor::Spawner;
+use embassy_futures::select::{select, Either};
 use embassy_stm32::{
     adc::Adc,
     bind_interrupts,
@@ -45,6 +46,17 @@ bind_interrupts!(struct Irqs {
 static QEI_R: AtomicI32 = AtomicI32::new(0);
 static QEI_L: AtomicI32 = AtomicI32::new(0);
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static CONTROL_MODE: AtomicU8 = AtomicU8::new(1); // デフォルト: LQR (1)
+
+/// LED点滅でモード番号を表示
+async fn blink_mode(led: &mut Output<'_>, count: u8) {
+    for _ in 0..count {
+        led.set_high();
+        Timer::after_millis(BLINK_ON_MS).await;
+        led.set_low();
+        Timer::after_millis(BLINK_OFF_MS).await;
+    }
+}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -134,21 +146,51 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(control_task(motors).unwrap());
 
-    // Button: toggle control on/off
+    // 起動時に現在モードを点滅表示
+    let mode = CONTROL_MODE.load(Ordering::Relaxed);
+    blink_mode(&mut led, mode + 1).await;
+
+    // ボタン: 短押し=モード切替、長押し=起動/停止
     loop {
         button.wait_for_falling_edge().await;
-        Timer::after_millis(200).await;
+        Timer::after_millis(DEBOUNCE_MS).await;
 
-        let was_running = RUNNING.load(Ordering::Relaxed);
-        if was_running {
-            RUNNING.store(false, Ordering::Relaxed);
-            led.set_low();
-            info!("Control stopped");
-        } else {
-            calibrate_theta();
-            RUNNING.store(true, Ordering::Relaxed);
-            led.set_high();
-            info!("Control started");
+        // 長押し判定: rising edge vs タイムアウト
+        let press = select(
+            button.wait_for_rising_edge(),
+            Timer::after_millis(LONG_PRESS_MS),
+        )
+        .await;
+
+        match press {
+            Either::First(_) => {
+                // 短押し: 停止中のみモード切替
+                if !RUNNING.load(Ordering::Relaxed) {
+                    let current = CONTROL_MODE.load(Ordering::Relaxed);
+                    let next = (current + 1) % NUM_MODES;
+                    CONTROL_MODE.store(next, Ordering::Relaxed);
+                    info!("Mode: {}", next);
+                    // LED N回点滅 (モード番号 = next + 1)
+                    blink_mode(&mut led, next + 1).await;
+                }
+            }
+            Either::Second(_) => {
+                // 長押し: 起動/停止トグル
+                let was_running = RUNNING.load(Ordering::Relaxed);
+                if was_running {
+                    RUNNING.store(false, Ordering::Relaxed);
+                    led.set_low();
+                    info!("Control stopped");
+                } else {
+                    calibrate_theta();
+                    RUNNING.store(true, Ordering::Relaxed);
+                    led.set_high();
+                    info!("Control started");
+                }
+                // ボタンリリースを待って再トリガー防止
+                button.wait_for_rising_edge().await;
+                Timer::after_millis(DEBOUNCE_MS).await;
+            }
         }
     }
 }
@@ -176,11 +218,19 @@ async fn encoder_l_task(mut qei: Qei<'static>) {
 #[embassy_executor::task]
 async fn control_task(mut motors: Motors) {
     let mut ticker = Ticker::every(Duration::from_hz(CONTROL_FREQUENCY as u64));
-    let mut controller = Controller::new();
+    let mut control_system = ControlSystem::new();
     let mut prev_qei_r: i32 = 0;
     let mut prev_qei_l: i32 = 0;
+    let mut current_mode = CONTROL_MODE.load(Ordering::Relaxed);
 
     loop {
+        // モード変更検出
+        let mode = CONTROL_MODE.load(Ordering::Relaxed);
+        if mode != current_mode {
+            control_system.set_mode(ControlMode::from_u8(mode));
+            current_mode = mode;
+        }
+
         if RUNNING.load(Ordering::Relaxed) {
             let theta = get_theta();
             let (current_r, current_l) = get_currents();
@@ -205,11 +255,11 @@ async fn control_task(mut motors: Motors) {
                 vin: 7.2, // TODO: read from ADC multiplexer
             };
 
-            let output = controller.update(&state);
+            let output = control_system.update(&state);
             motors.set_both(output.left, output.right);
         } else {
             motors.stop();
-            controller.reset();
+            control_system.reset();
             prev_qei_r = QEI_R.load(Ordering::Relaxed);
             prev_qei_l = QEI_L.load(Ordering::Relaxed);
         }

@@ -57,6 +57,27 @@ pub const K_ANGULAR_VELOCITY: f32 = -4.3992;
 
 pub const FORCE_TO_CURRENT: f32 = WHEEL_RADIUS / (GEAR_RATIO * MOTOR_KT * 2.0);
 
+// Balance PID - 角度ループ
+pub const BALANCE_ANGLE_KP: f32 = 50.0;
+pub const BALANCE_ANGLE_KI: f32 = 5.0;
+pub const BALANCE_ANGLE_KD: f32 = 15.0;
+
+// Balance PID - 位置ループ
+pub const BALANCE_POS_KP: f32 = 10.0;
+pub const BALANCE_POS_KI: f32 = 0.5;
+pub const BALANCE_POS_KD: f32 = 15.0;
+
+// Button timing
+pub const LONG_PRESS_MS: u64 = 800;
+pub const DEBOUNCE_MS: u64 = 50;
+
+// LED blink timing
+pub const BLINK_ON_MS: u64 = 150;
+pub const BLINK_OFF_MS: u64 = 150;
+
+// Control modes
+pub const NUM_MODES: u8 = 2;
+
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {
     let normalized_ad = (ad_value as f32) / (ADC_RESOLUTION as f32);

@@ -1,10 +1,13 @@
 function [t, x, u_hist] = simulate_nonlinear(controller_type, p, x0, tspan, ctrl_param)
 % SIMULATE_NONLINEAR 非線形シミュレーション
-%   controller_type: 'lqr' または 'pid'
+%   controller_type: 'lqr' / 'pid' / 'mrac'
 %   p: システムパラメータ
 %   x0: 初期状態 [x; x_dot; theta; theta_dot]
 %   tspan: シミュレーション時間 [t_start, t_end]
-%   ctrl_param: LQRの場合はゲインK、PIDの場合はpid_gains構造体
+%   ctrl_param:
+%     'lqr'  -> ゲインK
+%     'pid'  -> pid_gains構造体
+%     'mrac' -> design_mrac() が返す構造体
 
     dt = 0.001;
     t = tspan(1):dt:tspan(2);
@@ -18,6 +21,16 @@ function [t, x, u_hist] = simulate_nonlinear(controller_type, p, x0, tspan, ctrl
     int_x = 0;
     prev_theta = x0(3);
     prev_x_pos = x0(1);
+
+    % MRAC用内部状態
+    xm = x0;
+    theta_hat = zeros(4, 1);
+    prev_u = 0;
+    theta_filt = x0(3);
+    theta_dot_est = 0;
+    theta_est_initialized = false;
+    alpha_theta = lpf_alpha(cTheta(ctrl_param), dt);
+    alpha_theta_dot = lpf_alpha(cThetaDot(ctrl_param), dt);
 
     for k = 1:N-1
         state = x(:, k);
@@ -45,6 +58,55 @@ function [t, x, u_hist] = simulate_nonlinear(controller_type, p, x0, tspan, ctrl
                 prev_x_pos = state(1);
 
                 u = u_theta + u_x;
+
+            case 'mrac'
+                c = ctrl_param;
+                if ~theta_est_initialized
+                    theta_filt = state(3);
+                    theta_dot_est = 0;
+                    theta_est_initialized = true;
+                else
+                    theta_prev = theta_filt;
+                    theta_filt = alpha_theta * state(3) + (1 - alpha_theta) * theta_filt;
+                    theta_dot_raw = (theta_filt - theta_prev) / dt;
+                    theta_dot_est = alpha_theta_dot * theta_dot_raw ...
+                        + (1 - alpha_theta_dot) * theta_dot_est;
+                end
+
+                ctrl_state = [state(1); state(2); theta_filt; theta_dot_est];
+                phi = ctrl_state;
+                phi(3) = soft_zone(phi(3), c.ThetaSoftZone, c.InnerAngleGain);
+                phi(4) = soft_zone(phi(4), c.ThetaDotSoftZone, c.InnerAngularVelocityGain);
+                xm_ctrl = xm;
+                xm_ctrl(3) = soft_zone(xm_ctrl(3), c.ThetaSoftZone, c.InnerAngleGain);
+                xm_ctrl(4) = soft_zone(xm_ctrl(4), c.ThetaDotSoftZone, c.InnerAngularVelocityGain);
+                e = phi - xm_ctrl;
+                s = e' * c.PB;
+                denom = c.NormalizationEps + phi' * phi;
+
+                u_nom = -c.Kx * ctrl_state;
+                u_ad = -theta_hat' * phi;
+                u_raw = u_nom + u_ad;
+                max_du = c.MaxForceSlewRate * dt;
+                u_slewed = prev_u + min(max(u_raw - prev_u, -max_du), max_du);
+                u = min(max(u_slewed, -c.MaxForce), c.MaxForce);
+
+                adapt_enabled = abs(ctrl_state(3)) < c.EnableAngleLimit ...
+                    && abs(ctrl_state(4)) < c.EnableAngularVelocityLimit ...
+                    && abs(u_raw) < c.MaxForce ...
+                    && abs(s) > c.ErrorDeadzone ...
+                    && t(k) >= c.AdaptationDelaySec;
+
+                if adapt_enabled
+                    theta_hat_dot = c.GammaDiag * phi * (s / denom) - c.Sigma * theta_hat;
+                else
+                    theta_hat_dot = -c.Sigma * theta_hat;
+                end
+
+                theta_hat = theta_hat + dt * theta_hat_dot;
+                theta_hat = min(max(theta_hat, -c.MaxAdaptiveGain), c.MaxAdaptiveGain);
+                xm = xm + dt * (c.Am * xm);
+                prev_u = u;
         end
 
         % 制御入力を記録
@@ -62,4 +124,35 @@ function [t, x, u_hist] = simulate_nonlinear(controller_type, p, x0, tspan, ctrl
     x = x';
     u_hist = u_hist';
     t = t';
+end
+
+function y = soft_zone(x, zone, inner_gain)
+    ax = abs(x);
+    sx = sign(x);
+    if ax <= zone
+        y = inner_gain * x;
+    else
+        y = sx * (inner_gain * zone + (ax - zone));
+    end
+end
+
+function cutoff = cTheta(c)
+    if isfield(c, 'ThetaFilterCutoff')
+        cutoff = c.ThetaFilterCutoff;
+    else
+        cutoff = 50.0;
+    end
+end
+
+function cutoff = cThetaDot(c)
+    if isfield(c, 'ThetaDotFilterCutoff')
+        cutoff = c.ThetaDotFilterCutoff;
+    else
+        cutoff = 25.0;
+    end
+end
+
+function alpha = lpf_alpha(cutoff_freq, sample_time)
+    tau = 1 / (2 * pi * cutoff_freq);
+    alpha = sample_time / (tau + sample_time);
 end

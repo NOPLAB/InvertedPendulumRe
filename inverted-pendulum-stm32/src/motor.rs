@@ -27,33 +27,34 @@ impl Motors {
 
     pub fn set_left(&mut self, duty: f32) {
         let d = duty.clamp(-1.0, 1.0);
-        let pct = (d.abs() * 100.0) as u8;
+        let max_fwd = self.left_fwd.ch2().max_duty_cycle() as f32;
+        let max_rev = self.left_rev.ch4().max_duty_cycle() as f32;
 
         if d > 0.0 {
-            self.left_rev.ch4().set_duty_cycle_percent(0);
-            self.left_fwd.ch2().set_duty_cycle_percent(pct);
+            self.left_rev.ch4().set_duty_cycle(0);
+            self.left_fwd.ch2().set_duty_cycle((d * max_fwd) as u32);
         } else if d < 0.0 {
-            self.left_fwd.ch2().set_duty_cycle_percent(0);
-            self.left_rev.ch4().set_duty_cycle_percent(pct);
+            self.left_fwd.ch2().set_duty_cycle(0);
+            self.left_rev.ch4().set_duty_cycle(((-d) * max_rev) as u32);
         } else {
-            self.left_fwd.ch2().set_duty_cycle_percent(0);
-            self.left_rev.ch4().set_duty_cycle_percent(0);
+            self.left_fwd.ch2().set_duty_cycle(0);
+            self.left_rev.ch4().set_duty_cycle(0);
         }
     }
 
     pub fn set_right(&mut self, duty: f32) {
         let d = duty.clamp(-1.0, 1.0);
-        let pct = (d.abs() * 100.0) as u8;
+        let max = self.right.ch3().max_duty_cycle() as f32;
 
         if d > 0.0 {
-            self.right.ch4().set_duty_cycle_percent(0);
-            self.right.ch3().set_duty_cycle_percent(pct);
+            self.right.ch4().set_duty_cycle(0);
+            self.right.ch3().set_duty_cycle((d * max) as u32);
         } else if d < 0.0 {
-            self.right.ch3().set_duty_cycle_percent(0);
-            self.right.ch4().set_duty_cycle_percent(pct);
+            self.right.ch3().set_duty_cycle(0);
+            self.right.ch4().set_duty_cycle(((-d) * max) as u32);
         } else {
-            self.right.ch3().set_duty_cycle_percent(0);
-            self.right.ch4().set_duty_cycle_percent(0);
+            self.right.ch3().set_duty_cycle(0);
+            self.right.ch4().set_duty_cycle(0);
         }
     }
 

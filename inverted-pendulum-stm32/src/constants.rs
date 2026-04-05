@@ -1,6 +1,8 @@
 // Motor constants
 pub const MOTOR_KT: f32 = 0.0186; // Torque constant [Nm/A]
+#[allow(dead_code)]
 pub const MOTOR_KE: f32 = 0.0186; // Back EMF constant [V*s/rad]
+#[allow(dead_code)]
 pub const MOTOR_RA: f32 = 32.4; // Armature resistance [Ohm]
 
 // Mechanical constants
@@ -23,6 +25,7 @@ pub const SHUNT_RESISTOR: f32 = 0.010; // [Ohm]
 
 // Encoder
 pub const ENCODER_PULSES_PER_REV: i32 = 12 * 4; // 12 pulses * X4
+#[allow(dead_code)]
 pub const PULSE_TO_RAD: f32 = (2.0 * core::f32::consts::PI) / (12.0 * 4.0);
 pub const PULSE_TO_POSITION: f32 =
     (2.0 * core::f32::consts::PI * WHEEL_RADIUS) / ((ENCODER_PULSES_PER_REV as f32) * GEAR_RATIO);
@@ -66,11 +69,7 @@ pub fn adc_to_current(adc_value: u16) -> f32 {
 }
 
 pub fn adc_to_current_with_offset(adc_value: u16, offset: u16) -> f32 {
-    let compensated = if adc_value >= offset {
-        adc_value - offset
-    } else {
-        0
-    };
+    let compensated = adc_value.saturating_sub(offset);
     adc_to_current(compensated)
 }
 

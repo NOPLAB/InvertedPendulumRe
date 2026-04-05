@@ -74,15 +74,7 @@ async fn main(spawner: Spawner) {
     let adc1 = Adc::new(p.ADC1, Irqs);
     let adc2 = Adc::new(p.ADC2, Irqs);
 
-    spawner.spawn(
-        adc_task(
-            AdcSensors::new(adc1, adc2),
-            p.PB0,
-            p.PA5,
-            p.PA7,
-        )
-        .unwrap(),
-    );
+    spawner.spawn(adc_task(AdcSensors::new(adc1, adc2), p.PB0, p.PA5, p.PA7).unwrap());
 
     // Encoders
     let qei_r = Qei::new(
@@ -103,15 +95,24 @@ async fn main(spawner: Spawner) {
         p.TIM1,
         None,
         None,
-        Some(PwmPin::new(p.PA10, embassy_stm32::gpio::OutputType::PushPull)),
-        Some(PwmPin::new(p.PA11, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(
+            p.PA10,
+            embassy_stm32::gpio::OutputType::PushPull,
+        )),
+        Some(PwmPin::new(
+            p.PA11,
+            embassy_stm32::gpio::OutputType::PushPull,
+        )),
         Hertz(MOTOR_PWM_FREQUENCY),
         embassy_stm32::timer::low_level::CountingMode::EdgeAlignedUp,
     );
     let motor_l_fwd = SimplePwm::new(
         p.TIM2,
         None,
-        Some(PwmPin::new(p.PA1, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(
+            p.PA1,
+            embassy_stm32::gpio::OutputType::PushPull,
+        )),
         None,
         None,
         Hertz(MOTOR_PWM_FREQUENCY),
@@ -122,7 +123,10 @@ async fn main(spawner: Spawner) {
         None,
         None,
         None,
-        Some(PwmPin::new(p.PB7, embassy_stm32::gpio::OutputType::PushPull)),
+        Some(PwmPin::new(
+            p.PB7,
+            embassy_stm32::gpio::OutputType::PushPull,
+        )),
         Hertz(MOTOR_PWM_FREQUENCY),
         embassy_stm32::timer::low_level::CountingMode::EdgeAlignedUp,
     );

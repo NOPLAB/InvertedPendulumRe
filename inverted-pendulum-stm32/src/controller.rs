@@ -71,6 +71,7 @@ impl Controller {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_gains(&mut self, k_pos: f32, k_vel: f32, k_ang: f32, k_ang_vel: f32) {
         self.k_pos = k_pos;
         self.k_vel = k_vel;

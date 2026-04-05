@@ -43,6 +43,7 @@ pub fn calibrate_theta() {
     THETA_OFFSET.store((high >> 16) as u16, Ordering::Relaxed);
 }
 
+#[allow(dead_code)]
 pub fn calibrate_current() {
     let high = ADC_DATA_HIGH.load(Ordering::Relaxed);
     let low = ADC_DATA_LOW.load(Ordering::Relaxed);

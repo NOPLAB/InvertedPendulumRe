@@ -4,6 +4,7 @@ pub const MOTOR_KT: f32 = 0.0186; // Torque constant [Nm/A]
 pub const MOTOR_KE: f32 = 0.0186; // Back EMF constant [V*s/rad]
 #[allow(dead_code)]
 pub const MOTOR_RA: f32 = 32.4; // Armature resistance [Ohm]
+pub const MOTOR_LA: f32 = 2.955e-3; // Armature inductance [H]
 
 // Mechanical constants
 pub const WHEEL_RADIUS: f32 = 0.0255; // [m]
@@ -43,7 +44,10 @@ pub const MAX_VOLTAGE: f32 = 12.0;
 pub const MOTOR_PWM_FREQUENCY: u32 = 50_000; // [Hz]
 
 // Filter
-pub const THETA_FILTER_CUTOFF: f32 = 500.0; // [Hz]
+pub const THETA_FILTER_CUTOFF: f32 = 50.0; // [Hz]
+#[allow(dead_code)]
+pub const VELOCITY_FILTER_CUTOFF: f32 = 30.0; // [Hz]
+pub const THETA_DOT_FILTER_CUTOFF: f32 = 25.0; // [Hz]
 pub const CURRENT_FILTER_CUTOFF: f32 = 500.0; // [Hz]
 
 // Current PID
@@ -79,7 +83,7 @@ pub const BLINK_ON_MS: u64 = 150;
 pub const BLINK_OFF_MS: u64 = 150;
 
 // Control modes
-pub const NUM_MODES: u8 = 3;
+pub const NUM_MODES: u8 = 4;
 
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {

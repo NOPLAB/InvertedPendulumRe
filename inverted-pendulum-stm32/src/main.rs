@@ -17,7 +17,7 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use adc::{adc_task, calibrate_theta, get_currents, get_theta, AdcSensors};
+use adc::{adc_task, calibrate_current, calibrate_theta, get_currents, get_theta, AdcSensors};
 use constants::*;
 use controller::{ControlMode, ControlSystem, State};
 use embassy_executor::Spawner;
@@ -87,6 +87,8 @@ async fn main(spawner: Spawner) {
     let adc2 = Adc::new(p.ADC2, Irqs);
 
     spawner.spawn(adc_task(AdcSensors::new(adc1, adc2), p.PB0, p.PA5, p.PA7).unwrap());
+    Timer::after_millis(20).await;
+    calibrate_current();
 
     // Encoders
     let qei_r = Qei::new(

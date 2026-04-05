@@ -217,10 +217,14 @@ async fn encoder_l_task(mut qei: Qei<'static>) {
 
 #[embassy_executor::task]
 async fn control_task(mut motors: Motors) {
-    let mut ticker = Ticker::every(Duration::from_hz(CONTROL_FREQUENCY as u64));
+    let mut ticker = Ticker::every(Duration::from_hz(CURRENT_CONTROL_FREQUENCY as u64));
     let mut control_system = ControlSystem::new();
     let mut prev_qei_r: i32 = 0;
     let mut prev_qei_l: i32 = 0;
+    let mut qei_r_offset: i32 = 0;
+    let mut qei_l_offset: i32 = 0;
+    let mut was_running = false;
+    let mut balance_counter: u32 = 0;
     let mut current_mode = CONTROL_MODE.load(Ordering::Relaxed);
 
     loop {
@@ -231,39 +235,66 @@ async fn control_task(mut motors: Motors) {
             current_mode = mode;
         }
 
-        if RUNNING.load(Ordering::Relaxed) {
-            let theta = get_theta();
-            let (current_r, current_l) = get_currents();
+        let running = RUNNING.load(Ordering::Relaxed);
+
+        if running {
             let qei_r = QEI_R.load(Ordering::Relaxed);
             let qei_l = QEI_L.load(Ordering::Relaxed);
 
-            let position_r = pulses_to_position(qei_r);
-            let position_l = -pulses_to_position(qei_l);
-            let velocity_r = pulses_to_position(qei_r - prev_qei_r) / DT;
-            let velocity_l = -pulses_to_position(qei_l - prev_qei_l) / DT;
-            prev_qei_r = qei_r;
-            prev_qei_l = qei_l;
+            // 起動直後: エンコーダオフセットを記録し、速度スパイクを防止
+            if !was_running {
+                qei_r_offset = qei_r;
+                qei_l_offset = qei_l;
+                prev_qei_r = qei_r;
+                prev_qei_l = qei_l;
+                balance_counter = 0;
+                control_system.reset();
+            }
 
+            let theta = get_theta();
+            let (current_r, current_l) = get_currents();
+
+            // 振り子制御 (1kHz): BALANCE_DECIMATION 回に1回
+            if balance_counter == 0 {
+                let position_r = pulses_to_position(qei_r - qei_r_offset);
+                let position_l = -pulses_to_position(qei_l - qei_l_offset);
+                let velocity_r = pulses_to_position(qei_r - prev_qei_r) / BALANCE_DT;
+                let velocity_l = -pulses_to_position(qei_l - prev_qei_l) / BALANCE_DT;
+                prev_qei_r = qei_r;
+                prev_qei_l = qei_l;
+
+                let state = State {
+                    theta,
+                    position_r,
+                    position_l,
+                    velocity_r,
+                    velocity_l,
+                    current_r,
+                    current_l,
+                    vin: 7.2, // TODO: read from ADC multiplexer
+                };
+                control_system.update_balance(&state);
+            }
+            balance_counter = (balance_counter + 1) % BALANCE_DECIMATION;
+
+            // 電流制御 (10kHz): 毎回実行
             let state = State {
                 theta,
-                position_r,
-                position_l,
-                velocity_r,
-                velocity_l,
+                position_r: 0.0,
+                position_l: 0.0,
+                velocity_r: 0.0,
+                velocity_l: 0.0,
                 current_r,
                 current_l,
-                vin: 7.2, // TODO: read from ADC multiplexer
+                vin: 7.2,
             };
-
-            let output = control_system.update(&state);
+            let output = control_system.update_current(&state);
             motors.set_both(output.left, output.right);
         } else {
             motors.stop();
-            control_system.reset();
-            prev_qei_r = QEI_R.load(Ordering::Relaxed);
-            prev_qei_l = QEI_L.load(Ordering::Relaxed);
         }
 
+        was_running = running;
         ticker.next().await;
     }
 }

@@ -31,8 +31,11 @@ pub const PULSE_TO_POSITION: f32 =
     (2.0 * core::f32::consts::PI * WHEEL_RADIUS) / ((ENCODER_PULSES_PER_REV as f32) * GEAR_RATIO);
 
 // Control
-pub const CONTROL_FREQUENCY: u32 = 2000; // [Hz]
-pub const DT: f32 = 1.0 / CONTROL_FREQUENCY as f32;
+pub const CURRENT_CONTROL_FREQUENCY: u32 = 5_000; // [Hz] 電流制御ループ
+pub const BALANCE_CONTROL_FREQUENCY: u32 = 1_000; // [Hz] 振り子制御ループ
+pub const BALANCE_DECIMATION: u32 = CURRENT_CONTROL_FREQUENCY / BALANCE_CONTROL_FREQUENCY;
+pub const CURRENT_DT: f32 = 1.0 / CURRENT_CONTROL_FREQUENCY as f32;
+pub const BALANCE_DT: f32 = 1.0 / BALANCE_CONTROL_FREQUENCY as f32;
 pub const MAX_FORCE: f32 = 10.0;
 pub const MAX_VOLTAGE: f32 = 12.0;
 

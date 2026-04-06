@@ -34,6 +34,12 @@ classdef FirmwareExperiment
 
             if strcmp(spec.name, 'mpc')
                 obj.options.balance_loop_frequency = 100.0;
+                % オブザーバをMPCのバランスループ周波数に合わせて再設計
+                [A_lin, B_lin, C_lin, ~] = linearize_system(p);
+                obs = design_observer(A_lin, B_lin, C_lin, 1.0 / obj.options.balance_loop_frequency);
+                obj.options.observer.Ad = obs.Ad;
+                obj.options.observer.Bd = obs.Bd;
+                obj.options.observer.Ld = obs.Ld;
             end
 
             if isempty(ctrl_param)

@@ -7,8 +7,8 @@ function mpc = design_mpc(A, B)
     %% パラメータ
     Ts = 0.01;          % 制御周期 100Hz
     N  = 20;            % 予測ホライズン
-    Q  = diag([100, 0, 50, 100]);
-    R  = 10;
+    Q  = diag([100, 0, 500, 100]);
+    R  = 1;
     u_max = 10.0;       % 入力制約 [N]
     rho = 1.0;          % ADMMペナルティ
     max_iter = 50;      % ADMM最大反復

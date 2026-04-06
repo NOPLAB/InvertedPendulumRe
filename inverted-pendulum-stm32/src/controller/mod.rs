@@ -8,7 +8,7 @@ pub mod observer_constants;
 pub mod pid_balance;
 pub mod pid_balance_constants;
 
-use crate::constants::{clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE};
+use crate::config::{clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE};
 use crate::filter::LowPassFilter;
 use crate::pid::Pid;
 

@@ -1,4 +1,4 @@
-use crate::constants::clamp;
+use crate::config::clamp;
 
 /// PID controller with anti-windup
 pub struct Pid {

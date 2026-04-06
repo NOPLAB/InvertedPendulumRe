@@ -1,4 +1,4 @@
-use crate::constants::lpf_alpha;
+use crate::config::lpf_alpha;
 
 /// First-order low-pass filter
 #[derive(Debug, Clone, Copy)]

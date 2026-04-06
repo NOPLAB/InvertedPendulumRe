@@ -1,4 +1,4 @@
-use crate::constants::{clamp, BALANCE_DT};
+use crate::config::{clamp, BALANCE_DT};
 
 use super::ProcessedState;
 

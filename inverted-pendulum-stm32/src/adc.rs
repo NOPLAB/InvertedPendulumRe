@@ -1,4 +1,4 @@
-use crate::constants::*;
+use crate::config::*;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use embassy_stm32::{
     adc::{Adc, SampleTime},

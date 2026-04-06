@@ -31,30 +31,8 @@ pub const PULSE_TO_RAD: f32 = (2.0 * core::f32::consts::PI) / (12.0 * 4.0);
 pub const PULSE_TO_POSITION: f32 =
     (2.0 * core::f32::consts::PI * WHEEL_RADIUS) / ((ENCODER_PULSES_PER_REV as f32) * GEAR_RATIO);
 
-// Control
-pub const CURRENT_CONTROL_FREQUENCY: u32 = 5_000; // [Hz] 電流制御ループ
-pub const BALANCE_CONTROL_FREQUENCY: u32 = 1_000; // [Hz] 振り子制御ループ
-pub const BALANCE_DECIMATION: u32 = CURRENT_CONTROL_FREQUENCY / BALANCE_CONTROL_FREQUENCY;
-pub const CURRENT_DT: f32 = 1.0 / CURRENT_CONTROL_FREQUENCY as f32;
-pub const BALANCE_DT: f32 = 1.0 / BALANCE_CONTROL_FREQUENCY as f32;
-pub const MAX_FORCE: f32 = 10.0;
-pub const MAX_VOLTAGE: f32 = 12.0;
-
 // Motor PWM
 pub const MOTOR_PWM_FREQUENCY: u32 = 50_000; // [Hz]
-
-pub const FORCE_TO_CURRENT: f32 = WHEEL_RADIUS / (GEAR_RATIO * MOTOR_KT * 2.0);
-
-// Button timing
-pub const LONG_PRESS_MS: u64 = 800;
-pub const DEBOUNCE_MS: u64 = 50;
-
-// LED blink timing
-pub const BLINK_ON_MS: u64 = 150;
-pub const BLINK_OFF_MS: u64 = 150;
-
-// Control modes
-pub const NUM_MODES: u8 = 5;
 
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {
@@ -75,19 +53,4 @@ pub fn adc_to_current_with_offset(adc_value: u16, offset: u16) -> f32 {
 
 pub fn pulses_to_position(pulses: i32) -> f32 {
     (pulses as f32) * PULSE_TO_POSITION
-}
-
-pub fn clamp(value: f32, min: f32, max: f32) -> f32 {
-    if value > max {
-        max
-    } else if value < min {
-        min
-    } else {
-        value
-    }
-}
-
-pub fn lpf_alpha(cutoff_freq: f32, sample_time: f32) -> f32 {
-    let tau = 1.0 / (2.0 * core::f32::consts::PI * cutoff_freq);
-    sample_time / (tau + sample_time)
 }

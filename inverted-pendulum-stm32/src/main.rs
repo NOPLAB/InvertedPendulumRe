@@ -2,7 +2,7 @@
 #![no_main]
 
 mod adc;
-mod constants;
+mod config;
 mod controller;
 mod encoder;
 mod filter;
@@ -18,7 +18,7 @@ use panic_halt as _;
 use {defmt_rtt as _, panic_probe as _};
 
 use adc::{adc_task, calibrate_current, calibrate_theta, get_currents, get_theta, AdcSensors};
-use constants::*;
+use config::*;
 use controller::{ControlMode, ControlSystem, State};
 use embassy_executor::Spawner;
 use embassy_futures::select::{select, Either};

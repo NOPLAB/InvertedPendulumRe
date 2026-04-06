@@ -4,6 +4,7 @@
 mod ble;
 mod led;
 mod uart;
+mod wifi;
 
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::uart::{Config as UartConfig, Uart};
@@ -33,21 +34,29 @@ async fn main(spawner: embassy_executor::Spawner) {
     let led1 = Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default());
     let led2 = Output::new(peripherals.GPIO6, Level::Low, OutputConfig::default());
 
-    // BLE: Radio初期化 → BleConnector → ExternalController
+    // Radio初期化 (BLE + WiFi共有)
     static RADIO: StaticCell<esp_radio::Controller<'static>> = StaticCell::new();
     let radio = RADIO.init(esp_radio::init().unwrap());
+
+    // BLE: BleConnector → ExternalController
     let connector = BleConnector::new(radio, peripherals.BT, Default::default()).unwrap();
-    let controller: ExternalController<_, 20> = ExternalController::new(connector);
+    let ble_controller: ExternalController<_, 20> = ExternalController::new(connector);
+
+    // WiFi: WifiController + Interfaces
+    let (wifi_controller, _wifi_interfaces) =
+        esp_radio::wifi::new(radio, peripherals.WIFI, esp_radio::wifi::Config::default()).unwrap();
 
     // タスク起動
     spawner.must_spawn(uart::uart_rx_task(uart_rx));
     spawner.must_spawn(uart::uart_tx_task(uart_tx));
     spawner.must_spawn(led::led_task(led1, led2));
-    spawner.must_spawn(ble::ble_task(controller));
+    spawner.must_spawn(ble::ble_task(ble_controller));
+    spawner.must_spawn(wifi::wifi_task(wifi_controller));
 
-    // Bridge loop: センサデータをBLEへ配信
+    // Bridge loop: センサデータをBLE・WiFiへ配信
     loop {
         let data = uart::SENSOR_SIGNAL.wait().await;
         ble::BLE_SENSOR_CHANNEL.send(data).await;
+        wifi::WIFI_SENSOR_CHANNEL.try_send(data).ok();
     }
 }

@@ -1,0 +1,11 @@
+[package]
+name = "inverted-pendulum-protocol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+defmt = { version = "1.0.1", optional = true }
+
+[features]
+default = []
+defmt = ["dep:defmt"]

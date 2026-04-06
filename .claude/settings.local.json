@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__matlab__run_matlab_file",
+      "mcp__matlab__detect_matlab_toolboxes",
+      "mcp__matlab__evaluate_matlab_code",
+      "mcp__matlab__check_matlab_code",
+      "Bash(cargo build:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "mcp__docs-rs__docs_rs_readme",
+      "WebSearch",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:lib.rs)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:esp32.implrust.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "docs-rs"
+  ]
+}

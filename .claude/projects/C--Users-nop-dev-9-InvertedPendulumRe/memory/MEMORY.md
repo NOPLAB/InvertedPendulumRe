@@ -1,0 +1,1 @@
+- [Commitlint方式](feedback_commitlint.md) — commitメッセージはConventional Commits形式で書く

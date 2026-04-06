@@ -4,7 +4,7 @@ clear; close all; clc;
 %% 0. パス設定
 rootDir = fileparts(which(mfilename));
 addpath(fullfile(rootDir, 'plant'));
-addpath(fullfile(rootDir, 'control'));
+addpath(genpath(fullfile(rootDir, 'control')));
 addpath(fullfile(rootDir, 'sim'));
 addpath(fullfile(rootDir, 'simulink'));
 

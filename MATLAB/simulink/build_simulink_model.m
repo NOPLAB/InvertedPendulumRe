@@ -6,7 +6,9 @@ function build_simulink_model()
     scriptDir = fileparts(mfilename('fullpath'));
     rootDir   = fileparts(scriptDir);
     addpath(fullfile(rootDir, 'plant'));
+    addpath(fullfile(rootDir, 'control'));
     p = params();
+    pid_gains = design_pid();
 
     % 既存モデルを閉じる
     if bdIsLoaded(modelName)
@@ -77,7 +79,7 @@ function build_simulink_model()
         'Multiplication', 'Matrix(K*u)');
 
     % --- PID Subsystem (下段 y≈280) ---
-    build_pid_subsystem(modelName, [790, 257, 950, 303]);
+    build_pid_subsystem(modelName, [790, 257, 950, 303], pid_gains);
 
     % --- Manual Switch (中央 y=200) ---
     add_block('simulink/Signal Routing/Manual Switch', ...
@@ -145,7 +147,7 @@ function build_simulink_model()
 end
 
 
-function build_pid_subsystem(modelName, pos)
+function build_pid_subsystem(modelName, pos, pid_gains)
 % PID Subsystem を構築（角度PID + 位置PID の合算）
 
     subName = [modelName '/PID_Subsystem'];
@@ -172,7 +174,9 @@ function build_pid_subsystem(modelName, pos)
     add_block('simulink/Continuous/PID Controller', ...
         [subName '/Angle_PID'], ...
         'Position', [220, 18, 370, 58], ...
-        'P', '50', 'I', '5', 'D', '15', ...
+        'P', num2str(pid_gains.theta.Kp, '%.15g'), ...
+        'I', num2str(pid_gains.theta.Ki, '%.15g'), ...
+        'D', num2str(pid_gains.theta.Kd, '%.15g'), ...
         'N', '100');
     add_line(subName, 'Demux_pid/3', 'Angle_PID/1', ar{:});
 
@@ -180,7 +184,9 @@ function build_pid_subsystem(modelName, pos)
     add_block('simulink/Continuous/PID Controller', ...
         [subName '/Position_PID'], ...
         'Position', [220, 128, 370, 168], ...
-        'P', '10', 'I', '0.5', 'D', '15', ...
+        'P', num2str(pid_gains.x.Kp, '%.15g'), ...
+        'I', num2str(pid_gains.x.Ki, '%.15g'), ...
+        'D', num2str(pid_gains.x.Kd, '%.15g'), ...
         'N', '100');
     add_line(subName, 'Demux_pid/1', 'Position_PID/1', ar{:});
 

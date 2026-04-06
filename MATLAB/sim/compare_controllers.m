@@ -42,10 +42,11 @@ function print_metrics(name, t, x)
     theta_deg = rad2deg(x(:, 3));
 
     % 整定時間（角度が±0.5度以内に収まる最初の時刻）
-    settled = abs(theta_deg) < 0.5;
-    idx = find(settled, 1, 'first');
-    if ~isempty(idx) && all(settled(idx:end))
-        ts = t(idx);
+    last_outside_idx = find(abs(theta_deg) > 0.5, 1, 'last');
+    if isempty(last_outside_idx)
+        ts = t(1);
+    elseif last_outside_idx < numel(t)
+        ts = t(last_outside_idx + 1);
     else
         ts = NaN;
     end

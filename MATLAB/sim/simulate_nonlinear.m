@@ -43,6 +43,8 @@ function [t, x, u_hist] = simulate_nonlinear(controller_type, p, x0, tspan, ctrl
             case 'pid'
                 g = ctrl_param;
 
+                % Firmware と同じ符号規約:
+                % theta > 0 / x > 0 に対して正の制御入力を出す。
                 % 角度PID
                 e_theta = state(3);
                 int_theta = int_theta + e_theta * dt;

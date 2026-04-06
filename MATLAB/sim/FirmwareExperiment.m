@@ -32,6 +32,10 @@ classdef FirmwareExperiment
             obj.mode_name = spec.name;
             obj.options = FirmwareExperiment.default_options(options);
 
+            if strcmp(spec.name, 'mpc')
+                obj.options.balance_loop_frequency = 100.0;
+            end
+
             if isempty(ctrl_param)
                 obj.ctrl_param = FirmwareExperiment.default_controller_param(p, spec);
             else
@@ -132,6 +136,8 @@ classdef FirmwareExperiment
                         obj.ctrl_param, balance_dt, opts.max_force);
                 case 'mrac'
                     runtime.mrac = FirmwareExperiment.init_mrac_controller(obj.ctrl_param);
+                case 'mpc'
+                    runtime.mpc_state = [];  % ADMM warm-start (初回は空)
             end
 
             if ~strcmp(obj.mode_name, 'mrac')
@@ -277,6 +283,17 @@ classdef FirmwareExperiment
                     velocity_est = processed.velocity;
                     theta_dot_est = processed.theta_dot;
 
+                case 'mpc'
+                    x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
+                    [force, runtime.mpc_state] = mpc_controller(obj.ctrl_param, x_ctrl, runtime.mpc_state);
+                    runtime.target_force = FirmwareExperiment.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
+                    runtime.target_voltage = 0.0;
+                    velocity_est = observer_velocity;
+                    theta_dot_est = observer_theta_dot;
+                    current_used = NaN;
+                    current_state = NaN;
+
                 otherwise
                     error('FirmwareExperiment:UnsupportedMode', 'Unsupported mode: %s', obj.mode_name);
             end
@@ -360,6 +377,8 @@ classdef FirmwareExperiment
                         spec = struct('mode_number', 3, 'firmware_mode', 2, 'name', 'lqr');
                     case {'mode4', 'mrac'}
                         spec = struct('mode_number', 4, 'firmware_mode', 3, 'name', 'mrac');
+                    case {'mode5', 'mpc'}
+                        spec = struct('mode_number', 5, 'firmware_mode', 4, 'name', 'mpc');
                     otherwise
                         error('FirmwareExperiment:InvalidMode', 'Unsupported mode: %s', char(mode));
                 end
@@ -376,9 +395,11 @@ classdef FirmwareExperiment
                         spec = struct('mode_number', 3, 'firmware_mode', 2, 'name', 'lqr');
                     case 4
                         spec = struct('mode_number', 4, 'firmware_mode', 3, 'name', 'mrac');
+                    case 5
+                        spec = struct('mode_number', 5, 'firmware_mode', 4, 'name', 'mpc');
                     otherwise
                         error('FirmwareExperiment:InvalidMode', ...
-                            'Numeric mode must be one of 1, 2, 3, 4.');
+                            'Numeric mode must be one of 1, 2, 3, 4, 5.');
                 end
                 return;
             end
@@ -397,6 +418,9 @@ classdef FirmwareExperiment
                     ctrl_param = design_lqr(A, B);
                 case 'mrac'
                     ctrl_param = design_mrac(p);
+                case 'mpc'
+                    [A, B, ~, ~] = linearize_system(p);
+                    ctrl_param = design_mpc(A, B);
                 otherwise
                     error('FirmwareExperiment:InvalidMode', 'Unsupported mode: %s', spec.name);
             end
@@ -511,6 +535,8 @@ classdef FirmwareExperiment
         end
 
         function [force, balance_pid] = balance_pid_step(balance_pid, state)
+            % Rust firmware と同じ符号規約:
+            % theta > 0 / position > 0 のとき正の補正力を出す。
             [u_theta, balance_pid.angle] = FirmwareExperiment.pid_update( ...
                 balance_pid.angle, 0.0, state.theta);
             [u_x, balance_pid.position] = FirmwareExperiment.pid_update( ...

@@ -1,5 +1,5 @@
 use crate::config::{BALANCE_DT, MAX_FORCE};
-use crate::pid::Pid;
+use super::pid::Pid;
 
 use super::pid_balance_constants::*;
 use super::ProcessedState;

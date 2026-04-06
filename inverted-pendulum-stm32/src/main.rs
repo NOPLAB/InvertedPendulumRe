@@ -5,6 +5,7 @@ mod config;
 mod controller;
 mod driver;
 mod fmt;
+mod tasks;
 
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 
@@ -13,9 +14,8 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use driver::adc::{adc_task, calibrate_current, calibrate_theta, get_currents, get_theta, AdcSensors};
+use driver::adc::{adc_task, calibrate_current, calibrate_theta, AdcSensors};
 use config::*;
-use controller::{ControlMode, ControlSystem, State};
 use embassy_executor::Spawner;
 use embassy_futures::select::{select, Either};
 use embassy_stm32::{
@@ -28,9 +28,11 @@ use embassy_stm32::{
     time::Hertz,
     timer::simple_pwm::{PwmPin, SimplePwm},
 };
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::Timer;
 use driver::encoder::Qei;
 use driver::motor::Motors;
+use tasks::control::control_task;
+use tasks::encoder::{encoder_l_task, encoder_r_task};
 
 bind_interrupts!(struct Irqs {
     ADC1_2 => embassy_stm32::adc::InterruptHandler<peripherals::ADC1>,
@@ -39,10 +41,10 @@ bind_interrupts!(struct Irqs {
     EXTI9_5 => embassy_stm32::exti::InterruptHandler<embassy_stm32::interrupt::typelevel::EXTI9_5>;
 });
 
-static QEI_R: AtomicI32 = AtomicI32::new(0);
-static QEI_L: AtomicI32 = AtomicI32::new(0);
-static RUNNING: AtomicBool = AtomicBool::new(false);
-static CONTROL_MODE: AtomicU8 = AtomicU8::new(2); // デフォルト: LQR (2)
+pub(crate) static QEI_R: AtomicI32 = AtomicI32::new(0);
+pub(crate) static QEI_L: AtomicI32 = AtomicI32::new(0);
+pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
+pub(crate) static CONTROL_MODE: AtomicU8 = AtomicU8::new(2); // デフォルト: LQR (2)
 
 /// LED点滅でモード番号を表示
 async fn blink_mode(led: &mut Output<'_>, count: u8) {
@@ -190,131 +192,5 @@ async fn main(spawner: Spawner) {
                 Timer::after_millis(DEBOUNCE_MS).await;
             }
         }
-    }
-}
-
-#[embassy_executor::task]
-async fn encoder_r_task(mut qei: Qei<'static>) {
-    loop {
-        let result = qei.step().await;
-        qei.reset();
-        let prev = QEI_R.load(Ordering::Relaxed);
-        QEI_R.store(prev + result.pulses, Ordering::Relaxed);
-    }
-}
-
-#[embassy_executor::task]
-async fn encoder_l_task(mut qei: Qei<'static>) {
-    loop {
-        let result = qei.step().await;
-        qei.reset();
-        let prev = QEI_L.load(Ordering::Relaxed);
-        QEI_L.store(prev + result.pulses, Ordering::Relaxed);
-    }
-}
-
-#[embassy_executor::task]
-async fn control_task(mut motors: Motors) {
-    let mut ticker = Ticker::every(Duration::from_hz(CURRENT_CONTROL_FREQUENCY as u64));
-    let mut control_system = ControlSystem::new();
-    let mut prev_qei_r: i32 = 0;
-    let mut prev_qei_l: i32 = 0;
-    let mut qei_r_offset: i32 = 0;
-    let mut qei_l_offset: i32 = 0;
-    let mut was_running = false;
-    let mut balance_counter: u32 = 0;
-    let mut current_mode = CONTROL_MODE.load(Ordering::Relaxed);
-    let mut debug_counter: u32 = 0;
-    const DEBUG_DECIMATION: u32 = 500; // 5kHz / 500 = 10Hz 表示
-
-    loop {
-        // モード変更検出
-        let mode = CONTROL_MODE.load(Ordering::Relaxed);
-        if mode != current_mode {
-            control_system.set_mode(ControlMode::from_u8(mode));
-            current_mode = mode;
-        }
-
-        let running = RUNNING.load(Ordering::Relaxed);
-
-        if running {
-            let qei_r = QEI_R.load(Ordering::Relaxed);
-            let qei_l = QEI_L.load(Ordering::Relaxed);
-
-            // 起動直後: エンコーダオフセットを記録し、速度スパイクを防止
-            if !was_running {
-                qei_r_offset = qei_r;
-                qei_l_offset = qei_l;
-                prev_qei_r = qei_r;
-                prev_qei_l = qei_l;
-                balance_counter = 0;
-                control_system.reset();
-            }
-
-            let theta = get_theta();
-            let (current_r, current_l) = get_currents();
-
-            // 振り子制御 (1kHz): BALANCE_DECIMATION 回に1回
-            if balance_counter == 0 {
-                let position_r = pulses_to_position(qei_r - qei_r_offset);
-                let position_l = -pulses_to_position(qei_l - qei_l_offset);
-                let velocity_r = pulses_to_position(qei_r - prev_qei_r) / BALANCE_DT;
-                let velocity_l = -pulses_to_position(qei_l - prev_qei_l) / BALANCE_DT;
-                prev_qei_r = qei_r;
-                prev_qei_l = qei_l;
-
-                let state = State {
-                    theta,
-                    position_r,
-                    position_l,
-                    velocity_r,
-                    velocity_l,
-                    current_r,
-                    current_l,
-                    vin: 12.0,
-                };
-                control_system.update_balance(&state);
-
-                // デバッグモード: センサー値を10Hzで表示
-                if current_mode == ControlMode::Debug as u8 {
-                    debug_counter += 1;
-                    if debug_counter >= DEBUG_DECIMATION / BALANCE_DECIMATION {
-                        debug_counter = 0;
-                        let pos = (position_r + position_l) / 2.0;
-                        let vel = (velocity_r + velocity_l) / 2.0;
-                        info!(
-                            "th={} pos={} vel={} qR={} qL={} iR={} iL={}",
-                            theta,
-                            pos,
-                            vel,
-                            qei_r - qei_r_offset,
-                            qei_l - qei_l_offset,
-                            current_r,
-                            current_l
-                        );
-                    }
-                }
-            }
-            balance_counter = (balance_counter + 1) % BALANCE_DECIMATION;
-
-            // 電流制御 (10kHz): 毎回実行
-            let state = State {
-                theta,
-                position_r: 0.0,
-                position_l: 0.0,
-                velocity_r: 0.0,
-                velocity_l: 0.0,
-                current_r,
-                current_l,
-                vin: 12.0,
-            };
-            let output = control_system.update_current(&state);
-            motors.set_both(output.left, output.right);
-        } else {
-            motors.stop();
-        }
-
-        was_running = running;
-        ticker.next().await;
     }
 }

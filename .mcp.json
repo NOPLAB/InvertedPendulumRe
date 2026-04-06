@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "docs-rs": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@nuskey8/docs-rs-mcp"
+      ]
+    }
+  }
+}

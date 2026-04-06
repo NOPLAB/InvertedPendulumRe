@@ -24,7 +24,8 @@ classdef FirmwareExperiment
                 ctrl_param = [];
             end
 
-            spec = FirmwareExperiment.normalize_mode(mode);
+            util = sim_utils();
+            spec = util.normalize_mode(mode);
 
             obj.p = p;
             obj.mode = spec.mode_number;
@@ -125,8 +126,9 @@ classdef FirmwareExperiment
             current_dt = 1 / opts.current_loop_frequency;
             [qei_r0, qei_l0] = FirmwareExperiment.measure_encoder(initial_state(1), opts, obj.p);
 
-            runtime.theta_filter = FirmwareExperiment.init_lpf(balance_dt, obj.theta_filter_cutoff());
-            runtime.theta_dot_filter = FirmwareExperiment.init_lpf(balance_dt, obj.theta_dot_filter_cutoff());
+            util = sim_utils();
+            runtime.theta_filter = util.init_lpf(balance_dt, obj.theta_filter_cutoff());
+            runtime.theta_dot_filter = util.init_lpf(balance_dt, obj.theta_dot_filter_cutoff());
             runtime.prev_theta = 0.0;
             runtime.theta_initialized = false;
             runtime.qei_r_offset = qei_r0;
@@ -152,7 +154,7 @@ classdef FirmwareExperiment
             end
 
             if ~strcmp(obj.mode_name, 'mrac')
-                runtime.current_filter = FirmwareExperiment.init_lpf(current_dt, opts.current_filter_cutoff);
+                runtime.current_filter = util.init_lpf(current_dt, opts.current_filter_cutoff);
                 runtime.current_pid = FirmwareExperiment.init_pid( ...
                     opts.current_pid, current_dt, -opts.max_voltage, opts.max_voltage);
             end
@@ -213,6 +215,7 @@ classdef FirmwareExperiment
         end
 
         function [sample, runtime] = step_balance_loop(obj, runtime, theta_meas, qei_r, qei_l, balance_dt)
+            util = sim_utils();
             position_r = (qei_r - runtime.qei_r_offset) * FirmwareExperiment.pulse_to_position(obj.p);
             position_l = -(qei_l - runtime.qei_l_offset) * FirmwareExperiment.pulse_to_position(obj.p);
             velocity_r = (qei_r - runtime.qei_r_prev) * FirmwareExperiment.pulse_to_position(obj.p) / balance_dt;
@@ -224,7 +227,7 @@ classdef FirmwareExperiment
             position = (position_r + position_l) / 2.0;
             velocity = (velocity_r + velocity_l) / 2.0;
 
-            runtime.theta_filter = FirmwareExperiment.lpf_update(runtime.theta_filter, theta_meas);
+            runtime.theta_filter = util.lpf_update(runtime.theta_filter, theta_meas);
             theta = runtime.theta_filter.output;
 
             if runtime.theta_initialized
@@ -234,7 +237,7 @@ classdef FirmwareExperiment
                 theta_dot_raw = 0.0;
             end
             runtime.prev_theta = theta;
-            runtime.theta_dot_filter = FirmwareExperiment.lpf_update(runtime.theta_dot_filter, theta_dot_raw);
+            runtime.theta_dot_filter = util.lpf_update(runtime.theta_dot_filter, theta_dot_raw);
             theta_dot_direct = runtime.theta_dot_filter.output;
 
             [runtime.observer, observer_velocity, observer_theta_dot] = FirmwareExperiment.update_observer( ...
@@ -261,7 +264,7 @@ classdef FirmwareExperiment
                         'theta_dot', observer_theta_dot);
                     [force, runtime.balance_pid] = FirmwareExperiment.balance_pid_step( ...
                         runtime.balance_pid, processed);
-                    runtime.target_force = FirmwareExperiment.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
                     velocity_est = processed.velocity;
@@ -273,7 +276,7 @@ classdef FirmwareExperiment
                     x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
                     gain = reshape(obj.ctrl_param, 1, []);
                     force = -(gain * x_ctrl);
-                    runtime.target_force = FirmwareExperiment.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
                     velocity_est = observer_velocity;
@@ -297,7 +300,7 @@ classdef FirmwareExperiment
                 case 'mpc'
                     x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
                     [force, runtime.mpc_state] = mpc_controller(obj.ctrl_param, x_ctrl, runtime.mpc_state);
-                    runtime.target_force = FirmwareExperiment.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
                     velocity_est = observer_velocity;
@@ -324,13 +327,14 @@ classdef FirmwareExperiment
         end
 
         function [motor_voltage, applied_force, runtime] = step_current_loop(obj, runtime, cart_velocity, current_dt)
+            util = sim_utils();
             p = obj.p;
             opts = obj.options;
 
             switch obj.mode_name
                 case 'mrac'
-                    voltage_cmd = FirmwareExperiment.clamp(runtime.target_voltage, -opts.vin, opts.vin);
-                    duty = FirmwareExperiment.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
+                    voltage_cmd = util.clamp(runtime.target_voltage, -opts.vin, opts.vin);
+                    duty = util.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
                     motor_voltage = duty * opts.vin;
                     runtime.motor_prev_voltage = motor_voltage;
                     runtime.current_ctrl = NaN;
@@ -338,11 +342,11 @@ classdef FirmwareExperiment
                 otherwise
                     signed_current = FirmwareExperiment.correct_current_sign( ...
                         abs(runtime.current_actual), runtime.motor_prev_voltage);
-                    runtime.current_filter = FirmwareExperiment.lpf_update(runtime.current_filter, signed_current);
+                    runtime.current_filter = util.lpf_update(runtime.current_filter, signed_current);
                     runtime.current_ctrl = runtime.current_filter.output;
                     [voltage_cmd, runtime.current_pid] = FirmwareExperiment.pid_update( ...
                         runtime.current_pid, runtime.target_current, runtime.current_ctrl);
-                    duty = FirmwareExperiment.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
+                    duty = util.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
                     motor_voltage = duty * opts.vin;
                     runtime.motor_prev_voltage = motor_voltage;
             end
@@ -357,7 +361,7 @@ classdef FirmwareExperiment
 
             applied_force = 2.0 * p.G * p.Kt * runtime.current_actual / p.r;
             if opts.enable_force_saturation
-                applied_force = FirmwareExperiment.clamp(applied_force, -opts.force_limit, opts.force_limit);
+                applied_force = util.clamp(applied_force, -opts.force_limit, opts.force_limit);
             end
         end
     end
@@ -376,48 +380,6 @@ classdef FirmwareExperiment
     end
 
     methods (Static, Access = private)
-        function spec = normalize_mode(mode)
-            if isstring(mode) || ischar(mode)
-                key = lower(strtrim(char(mode)));
-                switch key
-                    case {'mode1', 'debug'}
-                        spec = struct('mode_number', 1, 'firmware_mode', 0, 'name', 'debug');
-                    case {'mode2', 'pid'}
-                        spec = struct('mode_number', 2, 'firmware_mode', 1, 'name', 'pid');
-                    case {'mode3', 'lqr'}
-                        spec = struct('mode_number', 3, 'firmware_mode', 2, 'name', 'lqr');
-                    case {'mode4', 'mrac'}
-                        spec = struct('mode_number', 4, 'firmware_mode', 3, 'name', 'mrac');
-                    case {'mode5', 'mpc'}
-                        spec = struct('mode_number', 5, 'firmware_mode', 4, 'name', 'mpc');
-                    otherwise
-                        error('FirmwareExperiment:InvalidMode', 'Unsupported mode: %s', char(mode));
-                end
-                return;
-            end
-
-            if isnumeric(mode) && isscalar(mode)
-                switch double(mode)
-                    case 1
-                        spec = struct('mode_number', 1, 'firmware_mode', 0, 'name', 'debug');
-                    case 2
-                        spec = struct('mode_number', 2, 'firmware_mode', 1, 'name', 'pid');
-                    case 3
-                        spec = struct('mode_number', 3, 'firmware_mode', 2, 'name', 'lqr');
-                    case 4
-                        spec = struct('mode_number', 4, 'firmware_mode', 3, 'name', 'mrac');
-                    case 5
-                        spec = struct('mode_number', 5, 'firmware_mode', 4, 'name', 'mpc');
-                    otherwise
-                        error('FirmwareExperiment:InvalidMode', ...
-                            'Numeric mode must be one of 1, 2, 3, 4, 5.');
-                end
-                return;
-            end
-
-            error('FirmwareExperiment:InvalidMode', 'mode must be a string or scalar number.');
-        end
-
         function ctrl_param = default_controller_param(p, spec)
             switch spec.name
                 case 'debug'
@@ -470,39 +432,8 @@ classdef FirmwareExperiment
                         1.25858405e-1, 9.00159305e-1]), ...
                 'disturbance', []);
 
-            opts = FirmwareExperiment.merge_structs(opts, options);
-        end
-
-        function out = merge_structs(base, override)
-            out = base;
-            if isempty(override)
-                return;
-            end
-
-            fields = fieldnames(override);
-            for idx = 1:numel(fields)
-                name = fields{idx};
-                if isfield(out, name) && isstruct(out.(name)) && isstruct(override.(name))
-                    out.(name) = FirmwareExperiment.merge_structs(out.(name), override.(name));
-                else
-                    out.(name) = override.(name);
-                end
-            end
-        end
-
-        function lpf = init_lpf(sample_time, cutoff_freq)
-            lpf.alpha = FirmwareExperiment.lpf_alpha(cutoff_freq, sample_time);
-            lpf.output = 0.0;
-            lpf.initialized = false;
-        end
-
-        function lpf = lpf_update(lpf, input)
-            if ~lpf.initialized
-                lpf.output = input;
-                lpf.initialized = true;
-            else
-                lpf.output = lpf.alpha * input + (1 - lpf.alpha) * lpf.output;
-            end
+            util = sim_utils();
+            opts = util.merge_structs(opts, options);
         end
 
         function pid = init_pid(cfg, dt, min_output, max_output)
@@ -518,6 +449,7 @@ classdef FirmwareExperiment
         end
 
         function [output, pid] = pid_update(pid, setpoint, measurement)
+            util = sim_utils();
             error_value = setpoint - measurement;
             p_term = pid.kp * error_value;
             pid.integral = pid.integral + pid.ki * error_value * pid.dt;
@@ -530,7 +462,7 @@ classdef FirmwareExperiment
             end
 
             unclamped = p_term + pid.integral + d_term;
-            output = FirmwareExperiment.clamp(unclamped, pid.min_output, pid.max_output);
+            output = util.clamp(unclamped, pid.min_output, pid.max_output);
 
             if unclamped > pid.max_output && pid.integral > 0.0
                 pid.integral = max(pid.max_output - p_term - d_term, 0.0);
@@ -596,6 +528,7 @@ classdef FirmwareExperiment
         end
 
         function [voltage, controller, current_used, current_state] = mrac_step(controller, state, measured_current, p, dt)
+            util = sim_utils();
             c = controller.ctrl;
 
             motor_speed = p.G * state.velocity / p.r;
@@ -640,7 +573,7 @@ classdef FirmwareExperiment
                     update = c.GammaDiag(idx, idx) * x(idx) * scale ...
                         - c.Sigma * controller.adaptive_gains(idx);
                     controller.adaptive_gains(idx) = controller.adaptive_gains(idx) + dt * update;
-                    controller.adaptive_gains(idx) = FirmwareExperiment.clamp( ...
+                    controller.adaptive_gains(idx) = util.clamp( ...
                         controller.adaptive_gains(idx), -c.MaxAdaptiveGain, c.MaxAdaptiveGain);
                 end
             else
@@ -649,11 +582,11 @@ classdef FirmwareExperiment
 
             raw_voltage = -c.Kx * x - controller.adaptive_gains' * x;
             max_delta = c.MaxVoltageSlewRate * dt;
-            slewed_voltage = controller.prev_voltage + FirmwareExperiment.clamp( ...
+            slewed_voltage = controller.prev_voltage + util.clamp( ...
                 raw_voltage - controller.prev_voltage, -max_delta, max_delta);
             compensated_voltage = FirmwareExperiment.apply_low_speed_drive_compensation( ...
                 slewed_voltage, state.theta, state.theta_dot, state.velocity, c);
-            voltage = FirmwareExperiment.clamp(compensated_voltage, -c.MaxVoltage, c.MaxVoltage);
+            voltage = util.clamp(compensated_voltage, -c.MaxVoltage, c.MaxVoltage);
             controller.prev_voltage = voltage;
             current_used = current;
             current_state = controller.current_state;
@@ -740,15 +673,6 @@ classdef FirmwareExperiment
             else
                 y = voltage;
             end
-        end
-
-        function y = clamp(x, lo, hi)
-            y = min(max(x, lo), hi);
-        end
-
-        function alpha = lpf_alpha(cutoff_freq, sample_time)
-            tau = 1 / (2 * pi * cutoff_freq);
-            alpha = sample_time / (tau + sample_time);
         end
 
         function f = eval_disturbance(disturbance, t)

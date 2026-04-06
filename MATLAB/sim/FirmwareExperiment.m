@@ -146,10 +146,12 @@ classdef FirmwareExperiment
 
             switch obj.mode_name
                 case 'pid'
-                    runtime.balance_pid = FirmwareExperiment.init_balance_pid( ...
+                    pid_api = step_pid();
+                    runtime.balance_pid = pid_api.init( ...
                         obj.ctrl_param, balance_dt, opts.max_force);
                 case 'mrac'
-                    runtime.mrac = FirmwareExperiment.init_mrac_controller(obj.ctrl_param);
+                    mrac_api = step_mrac();
+                    runtime.mrac = mrac_api.init(obj.ctrl_param);
                 case 'mpc'
                     runtime.mpc_state = [];  % ADMM warm-start (初回は空)
             end
@@ -263,7 +265,8 @@ classdef FirmwareExperiment
                         'velocity', observer_velocity, ...
                         'theta', theta, ...
                         'theta_dot', observer_theta_dot);
-                    [force, runtime.balance_pid] = FirmwareExperiment.balance_pid_step( ...
+                    pid_api = step_pid();
+                    [force, runtime.balance_pid] = pid_api.step( ...
                         runtime.balance_pid, processed);
                     runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
@@ -275,8 +278,8 @@ classdef FirmwareExperiment
 
                 case 'lqr'
                     x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
-                    gain = reshape(obj.ctrl_param, 1, []);
-                    force = -(gain * x_ctrl);
+                    lqr_api = step_lqr();
+                    force = lqr_api.step(obj.ctrl_param, x_ctrl);
                     runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
@@ -291,8 +294,9 @@ classdef FirmwareExperiment
                         'velocity', velocity, ...
                         'theta', theta, ...
                         'theta_dot', theta_dot_direct);
+                    mrac_api = step_mrac();
                     [runtime.target_voltage, runtime.mrac, current_used, current_state] = ...
-                        FirmwareExperiment.mrac_step(runtime.mrac, processed, signed_current, obj.p, balance_dt);
+                        mrac_api.step(runtime.mrac, processed, signed_current, obj.p, balance_dt);
                     runtime.target_force = 0.0;
                     runtime.target_current = 0.0;
                     velocity_est = processed.velocity;
@@ -300,7 +304,9 @@ classdef FirmwareExperiment
 
                 case 'mpc'
                     x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
-                    [force, runtime.mpc_state] = mpc_controller(obj.ctrl_param, x_ctrl, runtime.mpc_state);
+                    mpc_api = step_mpc();
+                    [force, runtime.mpc_state] = mpc_api.step( ...
+                        obj.ctrl_param, x_ctrl, runtime.mpc_state);
                     runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
@@ -418,21 +424,6 @@ classdef FirmwareExperiment
             pid.prev_error = error_value;
         end
 
-        function balance_pid = init_balance_pid(gains, dt, max_force)
-            balance_pid.angle = FirmwareExperiment.init_pid(gains.theta, dt, -max_force, max_force);
-            balance_pid.position = FirmwareExperiment.init_pid(gains.x, dt, -max_force, max_force);
-        end
-
-        function [force, balance_pid] = balance_pid_step(balance_pid, state)
-            % Rust firmware と同じ符号規約:
-            % theta > 0 / position > 0 のとき正の補正力を出す。
-            [u_theta, balance_pid.angle] = FirmwareExperiment.pid_update( ...
-                balance_pid.angle, state.theta, 0.0);
-            [u_x, balance_pid.position] = FirmwareExperiment.pid_update( ...
-                balance_pid.position, state.position, 0.0);
-            force = u_theta + u_x;
-        end
-
         function observer = init_observer(cfg)
             observer.Ad = cfg.Ad;
             observer.Bd = cfg.Bd(:);
@@ -460,81 +451,6 @@ classdef FirmwareExperiment
             observer.prev_force = applied_force;
             velocity = next(2);
             theta_dot = next(4);
-        end
-
-        function controller = init_mrac_controller(c)
-            controller.reference_state = zeros(5, 1);
-            controller.adaptive_gains = zeros(5, 1);
-            controller.initialized = false;
-            controller.prev_voltage = 0.0;
-            controller.current_state = 0.0;
-            controller.startup_timer = 0.0;
-            controller.ctrl = c;
-        end
-
-        function [voltage, controller, current_used, current_state] = mrac_step(controller, state, measured_current, p, dt)
-            util = sim_utils();
-            c = controller.ctrl;
-
-            motor_speed = p.G * state.velocity / p.r;
-            controller.current_state = FirmwareExperiment.step_current_estimate( ...
-                controller.current_state, controller.prev_voltage, motor_speed, p, dt);
-
-            if isfield(c, 'UseCurrentEstimate') && c.UseCurrentEstimate
-                current = controller.current_state;
-            else
-                current = measured_current;
-            end
-
-            x = [ ...
-                state.position; ...
-                state.velocity; ...
-                FirmwareExperiment.soft_zone(state.theta, c.ThetaSoftZone, c.InnerAngleGain); ...
-                FirmwareExperiment.soft_zone(state.theta_dot, c.ThetaDotSoftZone, c.InnerAngularVelocityGain); ...
-                FirmwareExperiment.soft_zone(current, c.CurrentSoftZone, c.InnerCurrentGain)];
-
-            if ~controller.initialized
-                controller.reference_state = x;
-                controller.initialized = true;
-                controller.startup_timer = 0.0;
-            else
-                controller.reference_state = controller.reference_state + dt * (c.Am * controller.reference_state);
-                controller.startup_timer = controller.startup_timer + dt;
-            end
-
-            error_value = x - controller.reference_state;
-            s = error_value' * c.PB;
-            x_norm = x' * x;
-
-            adaptation_enabled = abs(state.theta) < c.EnableAngleLimit ...
-                && abs(state.theta_dot) < c.EnableAngularVelocityLimit ...
-                && abs(current) < c.EnableCurrentLimit ...
-                && controller.startup_timer >= c.AdaptationDelaySec ...
-                && abs(s) > c.ErrorDeadzone;
-
-            if adaptation_enabled
-                scale = s / (c.NormalizationEps + x_norm);
-                for idx = 1:5
-                    update = c.GammaDiag(idx, idx) * x(idx) * scale ...
-                        - c.Sigma * controller.adaptive_gains(idx);
-                    controller.adaptive_gains(idx) = controller.adaptive_gains(idx) + dt * update;
-                    controller.adaptive_gains(idx) = util.clamp( ...
-                        controller.adaptive_gains(idx), -c.MaxAdaptiveGain, c.MaxAdaptiveGain);
-                end
-            else
-                controller.adaptive_gains = controller.adaptive_gains + dt * (-c.Sigma * controller.adaptive_gains);
-            end
-
-            raw_voltage = -c.Kx * x - controller.adaptive_gains' * x;
-            max_delta = c.MaxVoltageSlewRate * dt;
-            slewed_voltage = controller.prev_voltage + util.clamp( ...
-                raw_voltage - controller.prev_voltage, -max_delta, max_delta);
-            compensated_voltage = FirmwareExperiment.apply_low_speed_drive_compensation( ...
-                slewed_voltage, state.theta, state.theta_dot, state.velocity, c);
-            voltage = util.clamp(compensated_voltage, -c.MaxVoltage, c.MaxVoltage);
-            controller.prev_voltage = voltage;
-            current_used = current;
-            current_state = controller.current_state;
         end
 
         function y = measure_theta(theta, opts)
@@ -583,41 +499,12 @@ classdef FirmwareExperiment
             next = exp_term * current + ((exp_term - 1.0) / a) * b;
         end
 
-        function next = step_current_estimate(current, motor_voltage, motor_speed, p, dt)
-            numerator = current + (dt / p.La) * (motor_voltage - p.Ke * motor_speed);
-            denominator = 1.0 + (dt * p.Ra / p.La);
-            next = numerator / denominator;
-        end
-
         function next = rk4_step(f, state, input, dt)
             k1 = f(state, input);
             k2 = f(state + dt / 2 * k1, input);
             k3 = f(state + dt / 2 * k2, input);
             k4 = f(state + dt * k3, input);
             next = state + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4);
-        end
-
-        function y = soft_zone(x, zone, inner_gain)
-            abs_x = abs(x);
-            if abs_x <= zone
-                y = inner_gain * x;
-            else
-                y = sign(x) * (inner_gain * zone + (abs_x - zone));
-            end
-        end
-
-        function y = apply_low_speed_drive_compensation(voltage, theta, theta_dot, velocity, c)
-            abs_voltage = abs(voltage);
-            if abs_voltage < c.MinActiveVoltage
-                y = 0.0;
-            elseif abs(theta) < c.StictionEnableAngleLimit ...
-                    && abs(theta_dot) < c.StictionEnableAngularVelocityLimit ...
-                    && abs(velocity) < c.LowSpeedVelocityThreshold ...
-                    && abs_voltage < c.MinDriveVoltage
-                y = sign(voltage) * c.MinDriveVoltage;
-            else
-                y = voltage;
-            end
         end
 
         function f = eval_disturbance(disturbance, t)

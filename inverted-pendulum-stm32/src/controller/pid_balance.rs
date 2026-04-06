@@ -45,8 +45,8 @@ impl PidBalanceController {
     /// 角度PIDと位置PIDの出力を合算して力を計算
     pub fn compute_force(&mut self, state: &ProcessedState) -> f32 {
         // LQRと同じ符号規則: theta>0 → force>0, position>0 → force>0
-        let u_theta = self.angle_pid.update(state.theta, 0.0);
-        let u_x = self.position_pid.update(state.position, 0.0);
+        let u_theta = self.angle_pid.update_error(state.theta);
+        let u_x = self.position_pid.update_error(state.position);
         u_theta + u_x
     }
 

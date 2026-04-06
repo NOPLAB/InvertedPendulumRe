@@ -29,8 +29,10 @@ impl Pid {
     }
 
     pub fn update(&mut self, setpoint: f32, measurement: f32) -> f32 {
-        let error = setpoint - measurement;
+        self.update_error(setpoint - measurement)
+    }
 
+    pub fn update_error(&mut self, error: f32) -> f32 {
         let p = self.kp * error;
         self.integral += self.ki * error * self.dt;
 

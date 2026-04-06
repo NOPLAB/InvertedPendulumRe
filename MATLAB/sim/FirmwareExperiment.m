@@ -4,7 +4,7 @@ classdef FirmwareExperiment
     %     mode1 / debug -> no control output
     %     mode2 / pid   -> force target + current loop
     %     mode3 / lqr   -> force target + current loop
-    %     mode4 / mrac  -> direct voltage control
+    %     mode4 / mrac  -> adaptive force target + current loop
 
     properties (SetAccess = private)
         p
@@ -156,11 +156,9 @@ classdef FirmwareExperiment
                     runtime.mpc_state = [];  % ADMM warm-start (初回は空)
             end
 
-            if ~strcmp(obj.mode_name, 'mrac')
-                runtime.current_filter = util.init_lpf(current_dt, opts.current_filter_cutoff);
-                runtime.current_pid = FirmwareExperiment.init_pid( ...
-                    opts.current_pid, current_dt, -opts.max_voltage, opts.max_voltage);
-            end
+            runtime.current_filter = util.init_lpf(current_dt, opts.current_filter_cutoff);
+            runtime.current_pid = FirmwareExperiment.init_pid( ...
+                opts.current_pid, current_dt, -opts.max_voltage, opts.max_voltage);
         end
 
         function cutoff = theta_filter_cutoff(obj)
@@ -291,16 +289,19 @@ classdef FirmwareExperiment
                 case 'mrac'
                     processed = struct( ...
                         'position', position, ...
-                        'velocity', velocity, ...
+                        'velocity', observer_velocity, ...
                         'theta', theta, ...
-                        'theta_dot', theta_dot_direct);
+                        'theta_dot', observer_theta_dot);
                     mrac_api = step_mrac();
-                    [runtime.target_voltage, runtime.mrac, current_used, current_state] = ...
-                        mrac_api.step(runtime.mrac, processed, signed_current, obj.p, balance_dt);
-                    runtime.target_force = 0.0;
-                    runtime.target_current = 0.0;
+                    [force, runtime.mrac] = mrac_api.step( ...
+                        runtime.mrac, processed, balance_dt, obj.options.max_force);
+                    runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
+                    runtime.target_voltage = 0.0;
                     velocity_est = processed.velocity;
                     theta_dot_est = processed.theta_dot;
+                    current_used = NaN;
+                    current_state = NaN;
 
                 case 'mpc'
                     x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
@@ -338,25 +339,15 @@ classdef FirmwareExperiment
             p = obj.p;
             opts = obj.options;
 
-            switch obj.mode_name
-                case 'mrac'
-                    voltage_cmd = util.clamp(runtime.target_voltage, -opts.vin, opts.vin);
-                    duty = util.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
-                    motor_voltage = duty * opts.vin;
-                    runtime.motor_prev_voltage = motor_voltage;
-                    runtime.current_ctrl = NaN;
-
-                otherwise
-                    signed_current = FirmwareExperiment.correct_current_sign( ...
-                        abs(runtime.current_actual), runtime.motor_prev_voltage);
-                    runtime.current_filter = util.lpf_update(runtime.current_filter, signed_current);
-                    runtime.current_ctrl = runtime.current_filter.output;
-                    [voltage_cmd, runtime.current_pid] = FirmwareExperiment.pid_update( ...
-                        runtime.current_pid, runtime.target_current, runtime.current_ctrl);
-                    duty = util.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
-                    motor_voltage = duty * opts.vin;
-                    runtime.motor_prev_voltage = motor_voltage;
-            end
+            signed_current = FirmwareExperiment.correct_current_sign( ...
+                abs(runtime.current_actual), runtime.motor_prev_voltage);
+            runtime.current_filter = util.lpf_update(runtime.current_filter, signed_current);
+            runtime.current_ctrl = runtime.current_filter.output;
+            [voltage_cmd, runtime.current_pid] = FirmwareExperiment.pid_update( ...
+                runtime.current_pid, runtime.target_current, runtime.current_ctrl);
+            duty = util.clamp(voltage_cmd / opts.vin, -1.0, 1.0);
+            motor_voltage = duty * opts.vin;
+            runtime.motor_prev_voltage = motor_voltage;
 
             if opts.enable_motor_electrical_dynamics
                 motor_speed = p.G * cart_velocity / p.r;

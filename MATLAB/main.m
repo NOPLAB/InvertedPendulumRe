@@ -69,8 +69,8 @@ end
 figure('Name', 'Controller Comparison (Firmware)', 'NumberTitle', 'off', ...
     'Position', [100, 100, 1000, 800]);
 
-subplot_titles = {'Pendulum Angle', 'Cart Position', 'Control Input (Force or Voltage)', 'Motor Current'};
-subplot_ylabels = {'Angle [deg]', 'Position [m]', 'Force [N] / Voltage [V]', 'Current [A]'};
+subplot_titles = {'Pendulum Angle', 'Cart Position', 'Control Input (Force)', 'Motor Current'};
+subplot_ylabels = {'Angle [deg]', 'Position [m]', 'Force [N]', 'Current [A]'};
 
 % 振子角度
 subplot(4, 1, 1);
@@ -96,16 +96,11 @@ title(subplot_titles{2});
 legend(labels, 'Location', 'best');
 grid on;
 
-% 制御入力（力 / 電圧）
+% 制御入力（力）
 subplot(4, 1, 3);
 for i = 1:numel(results)
-    if strcmp(modes{i}, 'mrac')
-        plot(results{i}.t, results{i}.target_voltage, ...
-            'Color', colors{i}, 'LineStyle', styles{i}, 'LineWidth', 1.0);
-    else
-        plot(results{i}.t, results{i}.target_force, ...
-            'Color', colors{i}, 'LineStyle', styles{i}, 'LineWidth', 1.0);
-    end
+    plot(results{i}.t, results{i}.target_force, ...
+        'Color', colors{i}, 'LineStyle', styles{i}, 'LineWidth', 1.0);
     hold on;
 end
 ylabel(subplot_ylabels{3});

@@ -1,9 +1,12 @@
 pub mod lqr;
+pub mod lqr_constants;
 pub mod mpc;
 pub mod mpc_constants;
 pub mod mrac;
 pub mod observer;
+pub mod observer_constants;
 pub mod pid_balance;
+pub mod pid_balance_constants;
 
 use crate::constants::{clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE};
 use crate::filter::LowPassFilter;
@@ -165,7 +168,7 @@ impl ControlSystem {
     pub fn update_balance(&mut self, state: &State) {
         // 前処理: 左右平均
         let position = (state.position_r + state.position_l) / 2.0;
-        let velocity = (state.velocity_r + state.velocity_l) / 2.0;
+        let _measured_velocity = (state.velocity_r + state.velocity_l) / 2.0;
         let theta = self.theta_filter.update(state.theta);
         let theta_dot_raw = if self.theta_initialized {
             (theta - self.prev_theta) / BALANCE_DT
@@ -174,7 +177,7 @@ impl ControlSystem {
             0.0
         };
         self.prev_theta = theta;
-        let theta_dot = self.theta_dot_filter.update(theta_dot_raw);
+        let _theta_dot = self.theta_dot_filter.update(theta_dot_raw);
 
         let estimated = self.observer.update(position, theta, self.target_current);
 
@@ -184,13 +187,6 @@ impl ControlSystem {
             theta,
             theta_dot: estimated.theta_dot,
         };
-        let processed_direct = ProcessedState {
-            position,
-            velocity,
-            theta,
-            theta_dot,
-        };
-
         // モード依存: 力の計算
         let force = match self.mode {
             ControlMode::Debug => {
@@ -205,11 +201,9 @@ impl ControlSystem {
                 self.target_voltage = 0.0;
                 self.pid_balance.compute_force(&processed_observer)
             }
-            // mode4 は電流状態込みの拡大系を使うため、電圧を直接出力する
             ControlMode::Mrac => {
-                self.target_current = 0.0;
-                self.target_voltage = self.mrac.compute_voltage(&processed_direct, state.vin);
-                return;
+                self.target_voltage = 0.0;
+                self.mrac.compute_force(&processed_observer)
             }
             // MPC: 100Hz (10回に1回だけ計算、それ以外は保持)
             ControlMode::Mpc => {
@@ -231,17 +225,6 @@ impl ControlSystem {
     /// 電流制御ループ (10kHz): 電流PID → デューティ比
     pub fn update_current(&mut self, state: &State) -> MotorOutput {
         let vin = if state.vin > 1.0 { state.vin } else { 7.2 };
-
-        if self.mode == ControlMode::Mrac {
-            let voltage = clamp(self.target_voltage, -vin, vin);
-            let duty = clamp(voltage / vin, -1.0, 1.0);
-            self.prev_voltage_l = voltage;
-            self.prev_voltage_r = voltage;
-            return MotorOutput {
-                left: duty,
-                right: duty,
-            };
-        }
 
         // 電流センサーは絶対値のみ計測するため、電圧コマンドの符号で電流の方向を補正
         let corrected_l = correct_current_sign(state.current_l, self.prev_voltage_l);

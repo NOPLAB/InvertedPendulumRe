@@ -48,7 +48,11 @@ mpc = design_mpc(A, B);
 
 %% 5. ファームウェアシミュレーション（全モード）
 x0 = [0; 0; 0.1; 0];   % 初期状態（約5.7度傾き）
-t_end = 10;              % 10秒間
+t_end = 15;              % 15秒間
+
+% 外乱: t=10sに台車へ5Nのインパルス（50ms間）
+disturbance = struct('time', 10.0, 'duration', 0.05, 'force', 5.0);
+sim_options = struct('disturbance', disturbance);
 
 modes = {'pid', 'lqr', 'mrac', 'mpc'};
 labels = {'PID', 'LQR', 'MRAC', 'MPC'};
@@ -58,12 +62,15 @@ styles = {'--', '-', '-.', ':'};
 results = cell(size(modes));
 for i = 1:numel(modes)
     fprintf('Running %s firmware simulation...\n', labels{i});
-    results{i} = simulate_firmware(p, x0, t_end, modes{i});
+    results{i} = simulate_firmware(p, x0, t_end, modes{i}, [], sim_options);
 end
 
 %% 6. 性能比較プロット
 figure('Name', 'Controller Comparison (Firmware)', 'NumberTitle', 'off', ...
     'Position', [100, 100, 1000, 800]);
+
+subplot_titles = {'Pendulum Angle', 'Cart Position', 'Control Input (Force or Voltage)', 'Motor Current'};
+subplot_ylabels = {'Angle [deg]', 'Position [m]', 'Force [N] / Voltage [V]', 'Current [A]'};
 
 % 振子角度
 subplot(4, 1, 1);
@@ -72,8 +79,8 @@ for i = 1:numel(results)
         'Color', colors{i}, 'LineStyle', styles{i}, 'LineWidth', 1.5);
     hold on;
 end
-ylabel('Angle [deg]');
-title('Pendulum Angle');
+ylabel(subplot_ylabels{1});
+title(subplot_titles{1});
 legend(labels, 'Location', 'best');
 grid on;
 
@@ -84,8 +91,8 @@ for i = 1:numel(results)
         'Color', colors{i}, 'LineStyle', styles{i}, 'LineWidth', 1.5);
     hold on;
 end
-ylabel('Position [m]');
-title('Cart Position');
+ylabel(subplot_ylabels{2});
+title(subplot_titles{2});
 legend(labels, 'Location', 'best');
 grid on;
 
@@ -101,8 +108,8 @@ for i = 1:numel(results)
     end
     hold on;
 end
-ylabel('Force [N] / Voltage [V]');
-title('Control Input (Force or Voltage)');
+ylabel(subplot_ylabels{3});
+title(subplot_titles{3});
 legend(labels, 'Location', 'best');
 grid on;
 
@@ -113,11 +120,18 @@ for i = 1:numel(results)
         'Color', colors{i}, 'LineStyle', styles{i}, 'LineWidth', 1.0);
     hold on;
 end
-ylabel('Current [A]');
+ylabel(subplot_ylabels{4});
 xlabel('Time [s]');
-title('Motor Current');
+title(subplot_titles{4});
 legend(labels, 'Location', 'best');
 grid on;
+
+% 外乱タイミングの縦線を全サブプロットに追加
+for sp = 1:4
+    subplot(4, 1, sp);
+    xline(disturbance.time, 'k--', 'Disturbance', 'LineWidth', 1.0, ...
+        'LabelOrientation', 'horizontal', 'LabelHorizontalAlignment', 'left');
+end
 
 % 性能指標
 fprintf('\n=== Performance Comparison (Firmware Simulator) ===\n');

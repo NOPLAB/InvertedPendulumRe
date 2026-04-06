@@ -78,12 +78,17 @@ classdef FirmwareExperiment
                 end
 
                 [motor_voltage, applied_force, runtime] = obj.step_current_loop(runtime, state(2), current_dt);
+
+                % 外乱力の加算
+                disturbance_force = FirmwareExperiment.eval_disturbance(opts.disturbance, t);
+                total_force = applied_force + disturbance_force;
+
                 state = FirmwareExperiment.rk4_step( ...
-                    @(x, u) plant_model(0, x, u, obj.p), state, applied_force, current_dt);
+                    @(x, u) plant_model(0, x, u, obj.p), state, total_force, current_dt);
 
                 hist.t(k) = t;
                 hist.x(k, :) = state.';
-                hist.force(k) = applied_force;
+                hist.force(k) = total_force;
                 hist.target_force(k) = runtime.target_force;
                 hist.target_current(k) = runtime.target_current;
                 hist.target_voltage(k) = runtime.target_voltage;
@@ -462,7 +467,8 @@ classdef FirmwareExperiment
                         6.51586527e-2, 5.20789139e-3; ...
                         1.0445936, 1.67298784e-1; ...
                         4.21340529e-3, 6.08237631e-2; ...
-                        1.25858405e-1, 9.00159305e-1]));
+                        1.25858405e-1, 9.00159305e-1]), ...
+                'disturbance', []);
 
             opts = FirmwareExperiment.merge_structs(opts, options);
         end
@@ -544,9 +550,9 @@ classdef FirmwareExperiment
             % Rust firmware と同じ符号規約:
             % theta > 0 / position > 0 のとき正の補正力を出す。
             [u_theta, balance_pid.angle] = FirmwareExperiment.pid_update( ...
-                balance_pid.angle, 0.0, state.theta);
+                balance_pid.angle, state.theta, 0.0);
             [u_x, balance_pid.position] = FirmwareExperiment.pid_update( ...
-                balance_pid.position, 0.0, state.position);
+                balance_pid.position, state.position, 0.0);
             force = u_theta + u_x;
         end
 
@@ -743,6 +749,22 @@ classdef FirmwareExperiment
         function alpha = lpf_alpha(cutoff_freq, sample_time)
             tau = 1 / (2 * pi * cutoff_freq);
             alpha = sample_time / (tau + sample_time);
+        end
+
+        function f = eval_disturbance(disturbance, t)
+            % 外乱スケジュールの評価
+            %   disturbance: struct配列 with fields: time, duration, force
+            %   各要素は time <= t < time+duration の間に force [N] を加える
+            f = 0.0;
+            if isempty(disturbance)
+                return;
+            end
+            for i = 1:numel(disturbance)
+                d = disturbance(i);
+                if t >= d.time && t < d.time + d.duration
+                    f = f + d.force;
+                end
+            end
         end
     end
 end

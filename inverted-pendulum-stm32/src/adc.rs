@@ -1,6 +1,9 @@
 use crate::constants::*;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
-use embassy_stm32::{adc::{Adc, SampleTime}, peripherals, Peri};
+use embassy_stm32::{
+    adc::{Adc, SampleTime},
+    peripherals, Peri,
+};
 
 pub struct AdcSensors {
     adc1: Adc<'static, peripherals::ADC1>,

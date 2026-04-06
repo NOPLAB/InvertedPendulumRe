@@ -288,9 +288,13 @@ async fn control_task(mut motors: Motors) {
                         let vel = (velocity_r + velocity_l) / 2.0;
                         info!(
                             "th={} pos={} vel={} qR={} qL={} iR={} iL={}",
-                            theta, pos, vel,
-                            qei_r - qei_r_offset, qei_l - qei_l_offset,
-                            current_r, current_l
+                            theta,
+                            pos,
+                            vel,
+                            qei_r - qei_r_offset,
+                            qei_l - qei_l_offset,
+                            current_r,
+                            current_l
                         );
                     }
                 }

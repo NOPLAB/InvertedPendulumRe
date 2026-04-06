@@ -7,6 +7,5 @@ macro_rules! info {
 
 #[cfg(not(feature = "defmt"))]
 macro_rules! info {
-    ($($arg:tt)*) => { {} };
+    ($($arg:tt)*) => {{}};
 }
-

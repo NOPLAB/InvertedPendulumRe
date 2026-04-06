@@ -23,12 +23,7 @@ impl StateObserver {
         }
     }
 
-    pub fn update(
-        &mut self,
-        position: f32,
-        theta: f32,
-        target_current: f32,
-    ) -> ObserverEstimate {
+    pub fn update(&mut self, position: f32, theta: f32, target_current: f32) -> ObserverEstimate {
         let applied_force = target_current / FORCE_TO_CURRENT;
 
         if !self.initialized {

@@ -54,7 +54,7 @@ pub const BLINK_ON_MS: u64 = 150;
 pub const BLINK_OFF_MS: u64 = 150;
 
 // Control modes
-pub const NUM_MODES: u8 = 4;
+pub const NUM_MODES: u8 = 5;
 
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {

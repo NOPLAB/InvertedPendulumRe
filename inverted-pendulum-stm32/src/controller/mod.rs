@@ -1,11 +1,11 @@
 pub mod lqr;
+pub mod mpc;
+pub mod mpc_constants;
 pub mod mrac;
 pub mod observer;
 pub mod pid_balance;
 
-use crate::constants::{
-    clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE,
-};
+use crate::constants::{clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE};
 use crate::filter::LowPassFilter;
 use crate::pid::Pid;
 
@@ -20,9 +20,13 @@ const CURRENT_PID_KI: f32 = 10178.8;
 const CURRENT_PID_KD: f32 = 0.0;
 
 use lqr::LqrController;
+use mpc::MpcController;
 use mrac::MracController;
 use observer::StateObserver;
 use pid_balance::PidBalanceController;
+
+/// MPC decimation: 1kHzバランスループの10回に1回 = 100Hz
+const MPC_DECIMATION: u32 = 10;
 
 /// センサー状態（制御ループへの入力）
 pub struct State {
@@ -58,6 +62,7 @@ pub enum ControlMode {
     Pid = 1,
     Lqr = 2,
     Mrac = 3,
+    Mpc = 4,
 }
 
 impl ControlMode {
@@ -66,7 +71,8 @@ impl ControlMode {
             0 => ControlMode::Debug,
             1 => ControlMode::Pid,
             2 => ControlMode::Lqr,
-            _ => ControlMode::Mrac,
+            3 => ControlMode::Mrac,
+            _ => ControlMode::Mpc,
         }
     }
 }
@@ -78,6 +84,8 @@ pub struct ControlSystem {
     lqr: LqrController,
     pid_balance: PidBalanceController,
     mrac: MracController,
+    mpc: MpcController,
+    mpc_counter: u32,
 
     // 状態推定
     theta_filter: LowPassFilter,
@@ -104,6 +112,8 @@ impl ControlSystem {
             lqr: LqrController::new(),
             pid_balance: PidBalanceController::new(),
             mrac: MracController::new(),
+            mpc: MpcController::new(),
+            mpc_counter: 0,
             theta_filter: LowPassFilter::new(BALANCE_DT, THETA_FILTER_CUTOFF),
             theta_dot_filter: LowPassFilter::new(BALANCE_DT, THETA_DOT_FILTER_CUTOFF),
             prev_theta: 0.0,
@@ -143,6 +153,10 @@ impl ControlSystem {
                 ControlMode::Lqr => self.lqr.reset(),
                 ControlMode::Pid => self.pid_balance.reset(),
                 ControlMode::Mrac => self.mrac.reset(),
+                ControlMode::Mpc => {
+                    self.mpc.reset();
+                    self.mpc_counter = 0;
+                }
             }
         }
     }
@@ -197,7 +211,20 @@ impl ControlSystem {
                 self.target_voltage = self.mrac.compute_voltage(&processed_direct, state.vin);
                 return;
             }
+            // MPC: 100Hz (10回に1回だけ計算、それ以外は保持)
+            ControlMode::Mpc => {
+                self.target_voltage = 0.0;
+                if self.mpc_counter == 0 {
+                    self.mpc.compute_force(&processed_observer)
+                } else {
+                    self.mpc.held_force()
+                }
+            }
         };
+        // MPC decimationカウンタ更新
+        if self.mode == ControlMode::Mpc {
+            self.mpc_counter = (self.mpc_counter + 1) % MPC_DECIMATION;
+        }
         self.target_current = clamp(force, -MAX_FORCE, MAX_FORCE) * FORCE_TO_CURRENT;
     }
 
@@ -255,6 +282,8 @@ impl ControlSystem {
         self.lqr.reset();
         self.pid_balance.reset();
         self.mrac.reset();
+        self.mpc.reset();
+        self.mpc_counter = 0;
     }
 }
 

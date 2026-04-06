@@ -61,7 +61,7 @@ end
 
 %% 6. 性能比較プロット
 figure('Name', 'Controller Comparison (Firmware)', 'NumberTitle', 'off', ...
-       'Position', [100, 100, 1000, 800]);
+    'Position', [100, 100, 1000, 800]);
 
 % 振子角度
 subplot(4, 1, 1);
@@ -123,33 +123,25 @@ for i = 1:numel(results)
     print_metrics(labels{i}, results{i});
 end
 
-%% 7. アニメーション（LQR）
-lqr_idx = find(strcmp(modes, 'lqr'), 1);
-if ~isempty(lqr_idx)
-    fprintf('\nShowing LQR animation...\n');
-    r = results{lqr_idx};
-    animate_pendulum(r.t, r.x, p);
-end
-
 %% --- ローカル関数 ---
 function print_metrics(name, result)
-    theta_deg = rad2deg(result.x(:, 3));
-    t = result.t;
+theta_deg = rad2deg(result.x(:, 3));
+t = result.t;
 
-    % 整定時間（角度が±0.5度以内に収まる最初の時刻）
-    settled = abs(theta_deg) < 0.5;
-    idx = find(settled, 1, 'first');
-    if ~isempty(idx) && all(settled(idx:end))
-        ts = t(idx);
-    else
-        ts = NaN;
-    end
+% 整定時間（角度が±0.5度以内に収まる最初の時刻）
+settled = abs(theta_deg) < 0.5;
+idx = find(settled, 1, 'first');
+if ~isempty(idx) && all(settled(idx:end))
+    ts = t(idx);
+else
+    ts = NaN;
+end
 
-    % 最大オーバーシュート
-    overshoot = max(abs(theta_deg));
+% 最大オーバーシュート
+overshoot = max(abs(theta_deg));
 
-    fprintf('\n[%s]\n', name);
-    fprintf('  Settling time (+-0.5 deg): %.3f s\n', ts);
-    fprintf('  Max angle:                 %.2f deg\n', overshoot);
-    fprintf('  Max cart displacement:     %.3f m\n', max(abs(result.x(:,1))));
+fprintf('\n[%s]\n', name);
+fprintf('  Settling time (+-0.5 deg): %.3f s\n', ts);
+fprintf('  Max angle:                 %.2f deg\n', overshoot);
+fprintf('  Max cart displacement:     %.3f m\n', max(abs(result.x(:,1))));
 end

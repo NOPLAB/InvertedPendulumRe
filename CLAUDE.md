@@ -52,14 +52,27 @@ Requires nightly Rust (`build-std` is enabled) and `probe-rs` installed. Target 
 
 LQR state feedback → current PID → PWM duty cycle.
 
-- `main.rs` — Embassy async runtime, task spawning, button control (start/stop)
-- `constants.rs` — Motor/mechanical/ADC/control parameters
-- `controller.rs` — LQR state feedback + current PID (full control pipeline)
-- `motor.rs` — PWM H-bridge drive (left/right independent, TIM1/TIM2/TIM3)
-- `encoder.rs` — X4 quadrature encoder via EXTI interrupts
-- `adc.rs` — ADC reading (pendulum angle + motor currents, lock-free atomic)
-- `filter.rs` — First-order low-pass filter
-- `pid.rs` — PID controller with anti-windup
+- `main.rs` — Embassy entry point, HAL initialization, button UI, task spawning
+- `config/` — Constants and conversion functions
+  - `hardware.rs` — Motor/mechanical/ADC/encoder/PWM physical parameters
+  - `control.rs` — Control loop timing, limits, utility functions (clamp, lpf_alpha)
+  - `ui.rs` — Button/LED timing constants
+- `driver/` — HAL peripheral drivers
+  - `adc.rs` — ADC reading (pendulum angle + motor currents, lock-free atomic)
+  - `encoder.rs` — X4 quadrature encoder via EXTI interrupts
+  - `motor.rs` — PWM H-bridge drive (left/right independent, TIM1/TIM2/TIM3)
+- `controller/` — Control algorithms (HAL-independent)
+  - `mod.rs` — ControlSystem: unified preprocessing + current control pipeline
+  - `lqr.rs` / `lqr_constants.rs` — LQR state feedback
+  - `pid_balance.rs` / `pid_balance_constants.rs` — Cascaded PID (angle + position)
+  - `mrac.rs` / `mrac_constants.rs` — Model Reference Adaptive Control
+  - `mpc.rs` / `mpc_constants.rs` — MPC with ADMM QP solver
+  - `observer.rs` / `observer_constants.rs` — Discrete Luenberger state observer
+  - `pid.rs` — Generic PID with anti-windup
+  - `filter.rs` — First-order low-pass filter
+- `tasks/` — Embassy async tasks
+  - `control.rs` — Main control loop task (balance @ 1kHz + current @ 5kHz)
+  - `encoder.rs` — Encoder interrupt tasks (left/right)
 
 ### Key Dependencies
 

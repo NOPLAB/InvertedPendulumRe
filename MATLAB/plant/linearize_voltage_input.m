@@ -1,5 +1,5 @@
-function [A, B, C, D] = linearize_mode4_voltage_system(p)
-% LINEARIZE_MODE4_VOLTAGE_SYSTEM Linearized plant for mode4 direct-voltage control.
+function [A, B, C, D] = linearize_voltage_input(p)
+% LINEARIZE_VOLTAGE_INPUT Linearized plant for direct-voltage control.
 %   State: x = [position; velocity; theta; theta_dot; current]
 %   Input: u = motor voltage [V]
 %

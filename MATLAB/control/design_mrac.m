@@ -1,5 +1,5 @@
 function mrac = design_mrac(p, nominal_q, nominal_r, lyapunov_q)
-% DESIGN_MRAC Direct MRAC parameters for the mode4 augmented voltage plant.
+% DESIGN_MRAC Direct MRAC parameters for the augmented voltage-input plant.
 %   Plant:           x_dot = A x + B v
 %   State:           x = [position; velocity; theta; theta_dot; current]
 %   Reference model: x_m_dot = A_m x_m
@@ -7,7 +7,7 @@ function mrac = design_mrac(p, nominal_q, nominal_r, lyapunov_q)
 %   Adaptation:      Theta_hat_dot = Gamma * x * (e' * P * B) / (eps + x' * x) - sigma * Theta_hat
 %   where e = x - x_m
 
-    [A, B, ~, ~] = linearize_mode4_voltage_system(p);
+    [A, B, ~, ~] = linearize_voltage_input(p);
 
     if nargin < 2 || isempty(nominal_q)
         nominal_q = diag([20, 0.5, 800, 20, 0.2]);

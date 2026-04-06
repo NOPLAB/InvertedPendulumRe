@@ -1,14 +1,10 @@
 #![no_std]
 #![no_main]
 
-mod adc;
 mod config;
 mod controller;
-mod encoder;
-mod filter;
+mod driver;
 mod fmt;
-mod motor;
-mod pid;
 
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 
@@ -17,7 +13,7 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use adc::{adc_task, calibrate_current, calibrate_theta, get_currents, get_theta, AdcSensors};
+use driver::adc::{adc_task, calibrate_current, calibrate_theta, get_currents, get_theta, AdcSensors};
 use config::*;
 use controller::{ControlMode, ControlSystem, State};
 use embassy_executor::Spawner;
@@ -33,8 +29,8 @@ use embassy_stm32::{
     timer::simple_pwm::{PwmPin, SimplePwm},
 };
 use embassy_time::{Duration, Ticker, Timer};
-use encoder::Qei;
-use motor::Motors;
+use driver::encoder::Qei;
+use driver::motor::Motors;
 
 bind_interrupts!(struct Irqs {
     ADC1_2 => embassy_stm32::adc::InterruptHandler<peripherals::ADC1>,

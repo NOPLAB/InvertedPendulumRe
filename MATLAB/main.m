@@ -44,14 +44,16 @@ mrac = design_mrac(p);
 fprintf('MRAC nominal gain Kx:\n');
 disp(mrac.Kx);
 
+mpc = design_mpc(A, B);
+
 %% 5. ファームウェアシミュレーション（全モード）
 x0 = [0; 0; 0.1; 0];   % 初期状態（約5.7度傾き）
 t_end = 10;              % 10秒間
 
-modes = {'pid', 'lqr', 'mrac'};
-labels = {'PID', 'LQR', 'MRAC'};
-colors = {'r', 'b', [0 0.6 0]};
-styles = {'--', '-', '-.'};
+modes = {'pid', 'lqr', 'mrac', 'mpc'};
+labels = {'PID', 'LQR', 'MRAC', 'MPC'};
+colors = {'r', 'b', [0 0.6 0], [0.8 0.4 0]};
+styles = {'--', '-', '-.', ':'};
 
 results = cell(size(modes));
 for i = 1:numel(modes)

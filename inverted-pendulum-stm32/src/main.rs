@@ -39,6 +39,9 @@ bind_interrupts!(struct Irqs {
     embassy_stm32::adc::InterruptHandler<peripherals::ADC2>;
     EXTI4 => embassy_stm32::exti::InterruptHandler<embassy_stm32::interrupt::typelevel::EXTI4>;
     EXTI9_5 => embassy_stm32::exti::InterruptHandler<embassy_stm32::interrupt::typelevel::EXTI9_5>;
+    USART2 => embassy_stm32::usart::InterruptHandler<peripherals::USART2>;
+    DMA1_CHANNEL6 => embassy_stm32::dma::InterruptHandler<peripherals::DMA1_CH6>;
+    DMA1_CHANNEL7 => embassy_stm32::dma::InterruptHandler<peripherals::DMA1_CH7>;
 });
 
 pub(crate) static QEI_R: AtomicI32 = AtomicI32::new(0);
@@ -144,6 +147,18 @@ async fn main(spawner: Spawner) {
     );
     let motors = Motors::new(motor_r, motor_l_fwd, motor_l_rev);
 
+    // UART: PA2 (TX) / PA3 (RX) — ESP32と通信
+    let mut uart_config = embassy_stm32::usart::Config::default();
+    uart_config.baudrate = 115200;
+    let uart = embassy_stm32::usart::Uart::new(
+        p.USART2, p.PA3, p.PA2, p.DMA1_CH7, p.DMA1_CH6, Irqs, uart_config,
+    )
+    .unwrap();
+    let (uart_tx, uart_rx) = uart.split();
+
+    spawner.spawn(tasks::uart::uart_tx_task(uart_tx).unwrap());
+    spawner.spawn(tasks::uart::uart_rx_task(uart_rx).unwrap());
+
     spawner.spawn(control_task(motors).unwrap());
 
     // 起動時に現在モードを点滅表示
@@ -151,45 +166,80 @@ async fn main(spawner: Spawner) {
     blink_mode(&mut led, mode + 1).await;
 
     // ボタン: 短押し=モード切替、長押し=起動/停止
+    // UARTコマンド: ESP32からの制御指令
     loop {
-        button.wait_for_falling_edge().await;
-        Timer::after_millis(DEBOUNCE_MS).await;
-
-        // 長押し判定: rising edge vs タイムアウト
-        let press = select(
-            button.wait_for_rising_edge(),
-            Timer::after_millis(LONG_PRESS_MS),
+        let event = select(
+            button.wait_for_falling_edge(),
+            tasks::uart::RX_COMMAND_SIGNAL.wait(),
         )
         .await;
 
-        match press {
+        match event {
             Either::First(_) => {
-                // 短押し: 停止中のみモード切替
-                if !RUNNING.load(Ordering::Relaxed) {
-                    let current = CONTROL_MODE.load(Ordering::Relaxed);
-                    let next = (current + 1) % NUM_MODES;
-                    CONTROL_MODE.store(next, Ordering::Relaxed);
-                    info!("Mode: {}", next);
-                    // LED N回点滅 (モード番号 = next + 1)
-                    blink_mode(&mut led, next + 1).await;
+                // ボタン押下
+                Timer::after_millis(DEBOUNCE_MS).await;
+
+                // 長押し判定: rising edge vs タイムアウト
+                let press = select(
+                    button.wait_for_rising_edge(),
+                    Timer::after_millis(LONG_PRESS_MS),
+                )
+                .await;
+
+                match press {
+                    Either::First(_) => {
+                        // 短押し: 停止中のみモード切替
+                        if !RUNNING.load(Ordering::Relaxed) {
+                            let current = CONTROL_MODE.load(Ordering::Relaxed);
+                            let next = (current + 1) % NUM_MODES;
+                            CONTROL_MODE.store(next, Ordering::Relaxed);
+                            info!("Mode: {}", next);
+                            blink_mode(&mut led, next + 1).await;
+                        }
+                    }
+                    Either::Second(_) => {
+                        // 長押し: 起動/停止トグル
+                        let was_running = RUNNING.load(Ordering::Relaxed);
+                        if was_running {
+                            RUNNING.store(false, Ordering::Relaxed);
+                            led.set_low();
+                            info!("Control stopped");
+                        } else {
+                            calibrate_theta();
+                            RUNNING.store(true, Ordering::Relaxed);
+                            led.set_high();
+                            info!("Control started");
+                        }
+                        // ボタンリリースを待って再トリガー防止
+                        button.wait_for_rising_edge().await;
+                        Timer::after_millis(DEBOUNCE_MS).await;
+                    }
                 }
             }
-            Either::Second(_) => {
-                // 長押し: 起動/停止トグル
-                let was_running = RUNNING.load(Ordering::Relaxed);
-                if was_running {
-                    RUNNING.store(false, Ordering::Relaxed);
-                    led.set_low();
-                    info!("Control stopped");
-                } else {
-                    calibrate_theta();
-                    RUNNING.store(true, Ordering::Relaxed);
-                    led.set_high();
-                    info!("Control started");
+            Either::Second(cmd) => {
+                // UART受信コマンド処理
+                match cmd.command_type {
+                    inverted_pendulum_protocol::CommandType::Start => {
+                        calibrate_theta();
+                        RUNNING.store(true, Ordering::Relaxed);
+                        led.set_high();
+                        info!("Control started (UART)");
+                    }
+                    inverted_pendulum_protocol::CommandType::Stop => {
+                        RUNNING.store(false, Ordering::Relaxed);
+                        led.set_low();
+                        info!("Control stopped (UART)");
+                    }
+                    inverted_pendulum_protocol::CommandType::ModeChange => {
+                        if !RUNNING.load(Ordering::Relaxed) {
+                            let mode = cmd.payload[0] % 5;
+                            CONTROL_MODE.store(mode, Ordering::Relaxed);
+                            info!("Mode: {} (UART)", mode);
+                            blink_mode(&mut led, mode + 1).await;
+                        }
+                    }
+                    inverted_pendulum_protocol::CommandType::ParamSet => {}
                 }
-                // ボタンリリースを待って再トリガー防止
-                button.wait_for_rising_edge().await;
-                Timer::after_millis(DEBOUNCE_MS).await;
             }
         }
     }

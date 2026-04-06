@@ -60,28 +60,7 @@ pub struct ProcessedState {
     pub theta_dot: f32,
 }
 
-/// 制御モード
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum ControlMode {
-    Debug = 0,
-    Pid = 1,
-    Lqr = 2,
-    Mrac = 3,
-    Mpc = 4,
-}
-
-impl ControlMode {
-    pub fn from_u8(val: u8) -> Self {
-        match val {
-            0 => ControlMode::Debug,
-            1 => ControlMode::Pid,
-            2 => ControlMode::Lqr,
-            3 => ControlMode::Mrac,
-            _ => ControlMode::Mpc,
-        }
-    }
-}
+pub use inverted_pendulum_protocol::ControlMode;
 
 /// 統合制御システム
 /// 共通の前処理・電流制御パイプラインと、モード切り替え可能な力計算を統合

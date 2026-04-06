@@ -20,6 +20,7 @@ pub async fn control_task(mut motors: Motors) {
     let mut balance_counter: u32 = 0;
     let mut current_mode = crate::CONTROL_MODE.load(Ordering::Relaxed);
     let mut debug_counter: u32 = 0;
+    let mut uart_counter: u32 = 0;
 
     loop {
         // モード変更検出
@@ -68,6 +69,26 @@ pub async fn control_task(mut motors: Motors) {
                     vin: 12.0,
                 };
                 control_system.update_balance(&state);
+
+                // UART送信 (10Hz = バランスループ100回に1回)
+                uart_counter += 1;
+                if uart_counter >= 100 {
+                    uart_counter = 0;
+                    let pos = (position_r + position_l) / 2.0;
+                    let vel = (velocity_r + velocity_l) / 2.0;
+                    let sensor_data = inverted_pendulum_protocol::SensorData {
+                        theta,
+                        position: pos,
+                        velocity: vel,
+                        theta_dot: 0.0,
+                        current_l,
+                        current_r,
+                        control_mode: crate::CONTROL_MODE
+                            .load(core::sync::atomic::Ordering::Relaxed),
+                        running: 1,
+                    };
+                    crate::tasks::uart::TX_SENSOR_SIGNAL.signal(sensor_data);
+                }
 
                 // デバッグモード: センサー値を10Hzで表示
                 if current_mode == ControlMode::Debug as u8 {

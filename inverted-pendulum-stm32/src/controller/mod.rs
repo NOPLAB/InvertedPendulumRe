@@ -3,9 +3,21 @@ pub mod mrac;
 pub mod observer;
 pub mod pid_balance;
 
-use crate::constants::*;
+use crate::constants::{
+    clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE,
+};
 use crate::filter::LowPassFilter;
 use crate::pid::Pid;
+
+// フィルタカットオフ周波数
+const THETA_FILTER_CUTOFF: f32 = 50.0; // [Hz]
+const THETA_DOT_FILTER_CUTOFF: f32 = 25.0; // [Hz]
+const CURRENT_FILTER_CUTOFF: f32 = 500.0; // [Hz]
+
+// 電流PID
+const CURRENT_PID_KP: f32 = 0.928;
+const CURRENT_PID_KI: f32 = 10178.8;
+const CURRENT_PID_KD: f32 = 0.0;
 
 use lqr::LqrController;
 use mrac::MracController;

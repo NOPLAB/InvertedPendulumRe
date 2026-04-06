@@ -43,36 +43,7 @@ pub const MAX_VOLTAGE: f32 = 12.0;
 // Motor PWM
 pub const MOTOR_PWM_FREQUENCY: u32 = 50_000; // [Hz]
 
-// Filter
-pub const THETA_FILTER_CUTOFF: f32 = 50.0; // [Hz]
-#[allow(dead_code)]
-pub const VELOCITY_FILTER_CUTOFF: f32 = 30.0; // [Hz]
-pub const THETA_DOT_FILTER_CUTOFF: f32 = 25.0; // [Hz]
-pub const CURRENT_FILTER_CUTOFF: f32 = 500.0; // [Hz]
-
-// Current PID
-pub const CURRENT_PID_KP: f32 = 0.928;
-pub const CURRENT_PID_KI: f32 = 10178.8;
-pub const CURRENT_PID_KD: f32 = 0.0;
-
-// LQR gains: [position, velocity, angle, angular_velocity]
-// Q = diag([100, 0, 50, 100]), R = 10
-pub const K_POSITION: f32 = -3.1623;
-pub const K_VELOCITY: f32 = -3.5049;
-pub const K_ANGLE: f32 = -24.9428;
-pub const K_ANGULAR_VELOCITY: f32 = -4.3992;
-
 pub const FORCE_TO_CURRENT: f32 = WHEEL_RADIUS / (GEAR_RATIO * MOTOR_KT * 2.0);
-
-// Balance PID - 角度ループ
-pub const BALANCE_ANGLE_KP: f32 = 50.0;
-pub const BALANCE_ANGLE_KI: f32 = 5.0;
-pub const BALANCE_ANGLE_KD: f32 = 15.0;
-
-// Balance PID - 位置ループ
-pub const BALANCE_POS_KP: f32 = 10.0;
-pub const BALANCE_POS_KI: f32 = 0.5;
-pub const BALANCE_POS_KD: f32 = 15.0;
 
 // Button timing
 pub const LONG_PRESS_MS: u64 = 800;

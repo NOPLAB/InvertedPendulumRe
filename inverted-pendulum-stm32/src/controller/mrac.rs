@@ -1,5 +1,6 @@
 use crate::config::{clamp, BALANCE_DT};
 
+use super::mrac_constants::*;
 use super::ProcessedState;
 
 /// MATLAB で設計した 4 状態の LQR アンカー型 MRAC.
@@ -106,25 +107,3 @@ fn mat_vec_mul(matrix: &[[f32; 4]; 4], vector: &[f32; 4], out: &mut [f32; 4]) {
     }
 }
 
-// Designed in MATLAB/control/design_mrac.m
-const MRAC_KX: [f32; 4] = [-3.162_277_7, -3.504_865_6, -24.942_75, -4.399_181_4];
-
-const MRAC_AM: [[f32; 4]; 4] = [
-    [0.0, 1.0, 0.0, 0.0],
-    [5.475_094_3, 6.068_243_5, 42.799_32, 7.631_178],
-    [0.0, 0.0, 0.0, 1.0],
-    [-27.375_473, -30.341_217, -164.94661, -40.003_26],
-];
-
-const MRAC_PB: [f32; 4] = [-1.8973666, -2.0386274, -8.406_606, -1.395_032_3];
-const MRAC_GAMMA_DIAG: [f32; 5] = [0.035, 0.006, 0.12, 0.012, 0.08];
-const MRAC_SIGMA: f32 = 2.0;
-const MRAC_NORMALIZATION_EPS: f32 = 0.1;
-const MRAC_ADAPTATION_DELAY_SEC: f32 = 0.75;
-const MRAC_ERROR_DEADZONE: f32 = 0.002;
-const MRAC_MAX_ADAPTIVE_GAIN: f32 = 1.5;
-const MRAC_MAX_ADAPTIVE_FORCE: f32 = 1.5;
-const MRAC_ENABLE_ANGLE_LIMIT: f32 = 0.174_532_92;
-const MRAC_ENABLE_ANGULAR_VELOCITY_LIMIT: f32 = 3.5;
-const MRAC_ENABLE_POSITION_LIMIT: f32 = 0.35;
-const MRAC_ENABLE_VELOCITY_LIMIT: f32 = 1.2;

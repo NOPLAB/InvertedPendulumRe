@@ -17,7 +17,7 @@ p = params();
 x0 = [0; 0; 0.1; 0];
 t_end = 15;
 disturbance = struct('time', 10.0, 'duration', 0.05, 'force', 5.0);
-sim_options = struct('disturbance', disturbance);
+sim_opts = struct('disturbance', disturbance);
 
 modes = {'pid', 'lqr', 'mrac', 'mpc'};
 
@@ -26,7 +26,7 @@ results = struct();
 for i = 1:numel(modes)
     mode = modes{i};
     fprintf('Running %s simulation...\n', mode);
-    r = simulate_firmware(p, x0, t_end, mode, [], sim_options);
+    r = simulate_firmware(p, x0, t_end, mode, [], sim_opts);
     results.(mode).t = r.t;
     results.(mode).x = r.x;
     results.(mode).target_force = r.target_force;

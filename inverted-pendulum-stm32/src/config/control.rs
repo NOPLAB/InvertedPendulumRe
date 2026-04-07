@@ -5,7 +5,7 @@ use super::hardware::WHEEL_RADIUS;
 // Control
 pub const CURRENT_CONTROL_FREQUENCY: u32 = 5_000; // [Hz] 電流制御ループ
 pub const BALANCE_CONTROL_FREQUENCY: u32 = 1_000; // [Hz] 振り子制御ループ
-pub const MPC_CONTROL_FREQUENCY: u32 = 50; // [Hz] MPC更新周期
+pub const MPC_CONTROL_FREQUENCY: u32 = 100; // [Hz] MPC更新周期
 pub const BALANCE_DECIMATION: u32 = CURRENT_CONTROL_FREQUENCY / BALANCE_CONTROL_FREQUENCY;
 pub const CURRENT_DT: f32 = 1.0 / CURRENT_CONTROL_FREQUENCY as f32;
 pub const BALANCE_DT: f32 = 1.0 / BALANCE_CONTROL_FREQUENCY as f32;

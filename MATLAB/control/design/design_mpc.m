@@ -5,8 +5,8 @@ function mpc = design_mpc(A, B)
 %         H, H_inv_rho, S_x, S_u, Q_bar, R_bar, rho, max_iter
 
     %% パラメータ
-    Ts = 0.01;          % 制御周期 100Hz
-    N  = 20;            % 予測ホライズン
+    Ts = 0.02;          % 制御周期 50Hz
+    N  = 10;            % 予測ホライズン
     Q  = diag([100, 0, 500, 100]);
     R  = 1;
     u_max = 10.0;       % 入力制約 [N]

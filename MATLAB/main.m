@@ -39,13 +39,13 @@ fprintf('PID gains (x):     Kp=%.1f, Ki=%.1f, Kd=%.1f\n\n', ...
 obs = design_observer(A, B, C);
 fprintf('Observer poles (continuous): [%s]\n', num2str(obs.continuous_poles', '%.1f '));
 fprintf('Observer poles (discrete):   [%s]\n\n', num2str(obs.discrete_poles', '%.6f '));
-mpc_obs = design_observer(A, B, C, 0.01);
 
 mrac = design_mrac(p);
 fprintf('MRAC nominal gain Kx:\n');
 disp(mrac.Kx);
 
 mpc = design_mpc(A, B);
+mpc_obs = obs;
 controller_params = {pid_gains, K_lqr, mrac, mpc};
 
 %% 5. ファームウェアシミュレーション（全モード）
@@ -149,6 +149,10 @@ robust_options = struct( ...
     'success_final_angle_deg', 2.0, ...
     'angle_plot_limit_deg', 35.0, ...
     'position_plot_limit_m', 0.8, ...
+    'mu_analysis', struct( ...
+    'enabled', true, ...
+    'controller_mode', 'lqr', ...
+    'parameter_names', {{'M', 'm'}}), ...
     'parallel', struct( ...
     'enabled', true, ...
     'auto_start_pool', true, ...
@@ -228,6 +232,8 @@ fprintf('\n=== Robustness Analysis (Robust Control Toolbox) ===\n');
 print_uncertainty_definition(robust_options.uncertainty);
 
 uncertain_params = create_uncertain_params(p_nominal, robust_options.uncertainty);
+run_mu_analysis( ...
+    p_nominal, uncertain_params, modes, labels, controller_params, robust_options);
 sampled_params = sample_uncertain_params( ...
     uncertain_params, p_nominal, robust_options.sample_count, robust_options.seed);
 
@@ -282,6 +288,179 @@ if ~isempty(plus_minus_names)
         fprintf('  %s: +/-%g\n', name, uncertainty.plus_minus.(name));
     end
 end
+end
+
+function run_mu_analysis( ...
+    p_nominal, uncertain_params, modes, labels, controller_params, robust_options)
+
+mu_cfg = struct('enabled', true, 'controller_mode', 'lqr');
+if isfield(robust_options, 'mu_analysis')
+    mu_cfg = merge_option_struct(mu_cfg, robust_options.mu_analysis);
+end
+if ~mu_cfg.enabled
+    return;
+end
+
+controller_idx = find(strcmpi(modes, mu_cfg.controller_mode), 1);
+if isempty(controller_idx)
+    warning('main:MuAnalysisControllerMissing', ...
+        'Controller mode "%s" was not found. Skipping mu analysis.', mu_cfg.controller_mode);
+    return;
+end
+
+K = controller_params{controller_idx};
+if ~isnumeric(K) || ndims(K) ~= 2
+    warning('main:MuAnalysisUnsupportedController', ...
+        'Controller mode "%s" is not a static state-feedback gain. Skipping mu analysis.', ...
+        labels{controller_idx});
+    return;
+end
+
+[mu_uncertain_params, missing_mu_params] = select_uncertain_params(uncertain_params, mu_cfg);
+if ~isempty(missing_mu_params)
+    warning('main:MuAnalysisMissingParams', ...
+        'Skipping missing mu-analysis parameters: %s', strjoin(missing_mu_params, ', '));
+end
+if isempty(fieldnames(mu_uncertain_params))
+    warning('main:MuAnalysisNoParams', ...
+        'No uncertain parameters selected for mu analysis. Skipping.');
+    return;
+end
+
+p_uncertain = inject_uncertain_params(p_nominal, mu_uncertain_params);
+[A_nominal, B_nominal, ~, ~] = linearize_system(p_nominal);
+[A_uncertain, B_uncertain, ~, ~] = linearize_system(p_uncertain);
+
+sys_nominal = ss( ...
+    A_nominal - B_nominal * K, ...
+    zeros(size(A_nominal, 1), 1), ...
+    eye(size(A_nominal, 1)), ...
+    zeros(size(A_nominal, 1), 1));
+if ~isstable(sys_nominal)
+    warning('main:MuAnalysisNominalUnstable', ...
+        'Nominal closed-loop system for %s is unstable. Skipping mu analysis.', ...
+        labels{controller_idx});
+    return;
+end
+
+sys_uncertain = ss( ...
+    A_uncertain - B_uncertain * K, ...
+    zeros(size(A_nominal, 1), 1), ...
+    eye(size(A_nominal, 1)), ...
+    zeros(size(A_nominal, 1), 1));
+
+fprintf('\n=== Mu Analysis (robstab) ===\n');
+fprintf('Controller:                %s\n', labels{controller_idx});
+fprintf('Mu-analysis parameters:    %s\n', strjoin(fieldnames(mu_uncertain_params), ', '));
+fprintf('Uncertain parameter count: %d\n', numel(fieldnames(mu_uncertain_params)));
+fprintf('Nominal closed-loop poles:\n');
+disp(eig(A_nominal - B_nominal * K));
+
+try
+    [stab_margin, worst_case_unc, info] = robstab(sys_uncertain);
+catch analysis_error
+    warning('main:MuAnalysisFailed', 'robstab could not be executed: %s', analysis_error.message);
+    return;
+end
+
+print_robstab_summary(stab_margin, worst_case_unc);
+plot_robstab_result(stab_margin, labels{controller_idx});
+
+if isstruct(info) && isfield(info, 'Sensitivity') && ~isempty(info.Sensitivity)
+    fprintf('Sensitivity data was returned by robstab for detailed diagnosis.\n');
+end
+end
+
+function merged = merge_option_struct(base, override)
+merged = base;
+names = fieldnames(override);
+for i = 1:numel(names)
+    name = names{i};
+    merged.(name) = override.(name);
+end
+end
+
+function p_out = inject_uncertain_params(p_nominal, uncertain_params)
+p_out = p_nominal;
+param_names = fieldnames(uncertain_params);
+for i = 1:numel(param_names)
+    name = param_names{i};
+    p_out.(name) = uncertain_params.(name);
+end
+end
+
+function [selected_params, missing_names] = select_uncertain_params(uncertain_params, mu_cfg)
+selected_params = struct();
+missing_names = strings(0, 1);
+
+if ~isfield(mu_cfg, 'parameter_names') || isempty(mu_cfg.parameter_names)
+    selected_params = uncertain_params;
+    return;
+end
+
+requested_names = string(mu_cfg.parameter_names);
+for i = 1:numel(requested_names)
+    name = char(requested_names(i));
+    if isfield(uncertain_params, name)
+        selected_params.(name) = uncertain_params.(name);
+    else
+        missing_names(end + 1) = string(name); %#ok<AGROW>
+    end
+end
+end
+
+function print_robstab_summary(stab_margin, worst_case_unc)
+fprintf('Robust stability margin:   [%.4f, %.4f]\n', ...
+    stab_margin.LowerBound, stab_margin.UpperBound);
+fprintf('Critical frequency:        %.4f rad/s (%.4f Hz)\n', ...
+    stab_margin.CriticalFrequency, stab_margin.CriticalFrequency / (2 * pi));
+
+if stab_margin.LowerBound > 1.0
+    fprintf('Interpretation:            Robustly stable for the modeled uncertainty set.\n');
+elseif stab_margin.UpperBound < 1.0
+    fprintf('Interpretation:            Not robustly stable within the modeled uncertainty set.\n');
+else
+    fprintf('Interpretation:            Robust stability is inconclusive within current bounds.\n');
+end
+
+worst_case_text = format_worst_case_uncertainty(worst_case_unc);
+if ~isempty(worst_case_text)
+    fprintf('Worst perturbation dir.:   %s\n', worst_case_text);
+end
+end
+
+function plot_robstab_result(stab_margin, controller_label)
+figure('Name', sprintf('Mu Analysis - %s', controller_label), ...
+    'NumberTitle', 'off', 'Position', [180, 180, 520, 320]);
+
+bar([stab_margin.LowerBound, stab_margin.UpperBound], 0.5, ...
+    'FaceColor', [0.2 0.45 0.75]);
+hold on;
+yline(1.0, 'r--', 'Modeled uncertainty boundary', 'LineWidth', 1.2, ...
+    'LabelHorizontalAlignment', 'left');
+set(gca, 'XTick', [1, 2], 'XTickLabel', {'Lower bound', 'Upper bound'});
+ylabel('Robust stability margin');
+title(sprintf('robstab Margin for %s', controller_label));
+grid on;
+end
+
+function text = format_worst_case_uncertainty(worst_case_unc)
+if ~isstruct(worst_case_unc)
+    text = '';
+    return;
+end
+
+names = fieldnames(worst_case_unc);
+parts = strings(0, 1);
+for i = 1:numel(names)
+    name = names{i};
+    value = worst_case_unc.(name);
+    if isnumeric(value) && isscalar(value)
+        parts(end + 1) = sprintf('%s=%+.3f', name, value); %#ok<AGROW>
+    end
+end
+
+text = strjoin(cellstr(parts), ', ');
 end
 
 function plot_robust_response_figure( ...

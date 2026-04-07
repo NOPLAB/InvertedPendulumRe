@@ -34,25 +34,16 @@ classdef FirmwareExperiment
             opt = sim_options();
             obj.options = opt.default_options(options);
 
-            if strcmp(spec.name, 'mpc')
-                obj.options.balance_loop_frequency = 100.0;
-                if isfield(obj.options, 'mpc_observer') && ~isempty(obj.options.mpc_observer)
-                    obj.options.observer = obj.options.mpc_observer;
-                else
-                    % オブザーバをMPCのバランスループ周波数に合わせて再設計
-                    [A_lin, B_lin, C_lin, ~] = linearize_system(p);
-                    obs = design_observer(A_lin, B_lin, C_lin, 1.0 / obj.options.balance_loop_frequency);
-                    obj.options.observer = struct( ...
-                        'Ad', obs.Ad, ...
-                        'Bd', obs.Bd, ...
-                        'Ld', obs.Ld);
-                end
-            end
-
             if isempty(ctrl_param)
                 obj.ctrl_param = opt.default_controller_param(p, spec);
             else
                 obj.ctrl_param = ctrl_param;
+            end
+
+            if strcmp(spec.name, 'mpc')
+                if isfield(obj.options, 'mpc_observer') && ~isempty(obj.options.mpc_observer)
+                    obj.options.observer = obj.options.mpc_observer;
+                end
             end
         end
 
@@ -159,6 +150,12 @@ classdef FirmwareExperiment
                     runtime.mrac = mrac_api.init(obj.ctrl_param);
                 case 'mpc'
                     runtime.mpc_state = [];  % ADMM warm-start (初回は空)
+                    runtime.mpc_counter = 0;
+                    runtime.mpc_force = 0.0;
+                    runtime.mpc_decimation = 1;
+                    if isstruct(obj.ctrl_param) && isfield(obj.ctrl_param, 'Ts') && obj.ctrl_param.Ts > 0.0
+                        runtime.mpc_decimation = max(1, round(obj.ctrl_param.Ts / balance_dt));
+                    end
             end
 
             runtime.current_filter = util.init_lpf(current_dt, opts.current_filter_cutoff);
@@ -310,16 +307,20 @@ classdef FirmwareExperiment
 
                 case 'mpc'
                     x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
-                    mpc_api = step_mpc();
-                    [force, runtime.mpc_state] = mpc_api.step( ...
-                        obj.ctrl_param, x_ctrl, runtime.mpc_state);
-                    runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    if runtime.mpc_counter == 0
+                        mpc_api = step_mpc();
+                        [force, runtime.mpc_state] = mpc_api.step( ...
+                            obj.ctrl_param, x_ctrl, runtime.mpc_state);
+                        runtime.mpc_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
+                    end
+                    runtime.target_force = runtime.mpc_force;
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
                     velocity_est = observer_velocity;
                     theta_dot_est = observer_theta_dot;
                     current_used = NaN;
                     current_state = NaN;
+                    runtime.mpc_counter = mod(runtime.mpc_counter + 1, runtime.mpc_decimation);
 
                 otherwise
                     error('FirmwareExperiment:UnsupportedMode', 'Unsupported mode: %s', obj.mode_name);

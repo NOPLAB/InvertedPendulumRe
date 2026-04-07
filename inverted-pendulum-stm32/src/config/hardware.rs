@@ -4,6 +4,7 @@ pub const MOTOR_KT: f32 = 0.0186; // Torque constant [Nm/A]
 pub const MOTOR_KE: f32 = 0.0186; // Back EMF constant [V*s/rad]
 #[allow(dead_code)]
 pub const MOTOR_RA: f32 = 32.4; // Armature resistance [Ohm]
+#[allow(dead_code)]
 pub const MOTOR_LA: f32 = 2.955e-3; // Armature inductance [H]
 
 // Mechanical constants

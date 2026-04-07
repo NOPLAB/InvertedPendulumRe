@@ -7,7 +7,6 @@ pub struct MpcController {
     u: [f32; MPC_N],
     z: [f32; MPC_N],
     w: [f32; MPC_N],
-    force: f32,
     first_call: bool,
 }
 
@@ -17,12 +16,11 @@ impl MpcController {
             u: [0.0; MPC_N],
             z: [0.0; MPC_N],
             w: [0.0; MPC_N],
-            force: 0.0,
             first_call: true,
         }
     }
 
-    /// MPC制御力を計算（100Hzで呼ばれる）
+    /// MPC制御力を計算（50Hzで呼ばれる）
     pub fn compute_force(&mut self, state: &ProcessedState) -> f32 {
         let x = [state.position, state.velocity, state.theta, state.theta_dot];
 
@@ -41,13 +39,13 @@ impl MpcController {
 
         // f = F * x_current (勾配ベクトル、オンライン計算)
         let mut f = [0.0f32; MPC_N];
-        for i in 0..MPC_N {
+        for (i, f_i) in f.iter_mut().enumerate().take(MPC_N) {
             let row_offset = i * MPC_NX;
             let mut sum = 0.0f32;
             for j in 0..MPC_NX {
                 sum += MPC_F[row_offset + j] * x[j];
             }
-            f[i] = sum;
+            *f_i = sum;
         }
 
         // ADMM反復
@@ -70,13 +68,7 @@ impl MpcController {
             // Z更新: box制約への射影 (clamp)
             for i in 0..MPC_N {
                 let val = self.u[i] + self.w[i];
-                self.z[i] = if val < MPC_U_MIN {
-                    MPC_U_MIN
-                } else if val > MPC_U_MAX {
-                    MPC_U_MAX
-                } else {
-                    val
-                };
+                self.z[i] = val.clamp(MPC_U_MIN, MPC_U_MAX);
             }
 
             // W更新: 双対変数
@@ -85,20 +77,13 @@ impl MpcController {
             }
         }
 
-        self.force = self.u[0];
-        self.force
-    }
-
-    /// 保持中の力指令を返す（MPC非更新tick用）
-    pub fn held_force(&self) -> f32 {
-        self.force
+        self.u[0]
     }
 
     pub fn reset(&mut self) {
         self.u = [0.0; MPC_N];
         self.z = [0.0; MPC_N];
         self.w = [0.0; MPC_N];
-        self.force = 0.0;
         self.first_call = true;
     }
 }

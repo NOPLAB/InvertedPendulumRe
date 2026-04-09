@@ -160,7 +160,6 @@ async fn main(spawner: Spawner) {
     spawner.spawn(tasks::uart::uart_rx_task(uart_rx).unwrap());
 
     spawner.spawn(control_task(motors).unwrap());
-    spawner.spawn(tasks::mpc::mpc_task().unwrap());
 
     // 起動時に現在モードを点滅表示
     let mode = CONTROL_MODE.load(Ordering::Relaxed);

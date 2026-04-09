@@ -1,22 +1,13 @@
 mod filter;
-pub mod lqr;
-pub mod lqr_constants;
-pub mod mpc;
-pub mod mpc_constants;
-pub mod mrac;
-pub mod mrac_constants;
-pub mod observer;
-pub mod observer_constants;
 mod pid;
-pub mod pid_balance;
-pub mod pid_balance_constants;
 
 use crate::config::{
-    clamp, BALANCE_CONTROL_FREQUENCY, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE,
-    MAX_VOLTAGE, MPC_CONTROL_FREQUENCY,
+    clamp, BALANCE_DT, CURRENT_DT, FORCE_TO_CURRENT, MAX_FORCE, MAX_VOLTAGE,
 };
 use filter::LowPassFilter;
 use pid::Pid;
+
+use inverted_pendulum_controller as ctrl;
 
 // フィルタカットオフ周波数
 const THETA_FILTER_CUTOFF: f32 = 50.0; // [Hz]
@@ -27,14 +18,6 @@ const CURRENT_FILTER_CUTOFF: f32 = 500.0; // [Hz]
 const CURRENT_PID_KP: f32 = 0.928;
 const CURRENT_PID_KI: f32 = 10178.8;
 const CURRENT_PID_KD: f32 = 0.0;
-
-use lqr::LqrController;
-use mrac::MracController;
-use observer::StateObserver;
-use pid_balance::PidBalanceController;
-
-/// MPC decimation: 1kHzバランスループの20回に1回 = 50Hz
-const MPC_DECIMATION: u32 = BALANCE_CONTROL_FREQUENCY / MPC_CONTROL_FREQUENCY;
 
 /// センサー状態（制御ループへの入力）
 pub struct State {
@@ -54,32 +37,18 @@ pub struct MotorOutput {
     pub right: f32,
 }
 
-/// 前処理済み状態（内部制御器への入力）
-#[derive(Clone, Copy)]
-pub struct ProcessedState {
-    pub position: f32,
-    pub velocity: f32,
-    pub theta: f32,
-    pub theta_dot: f32,
-}
-
 pub use inverted_pendulum_protocol::ControlMode;
 
 /// 統合制御システム
 /// 共通の前処理・電流制御パイプラインと、モード切り替え可能な力計算を統合
 pub struct ControlSystem {
     mode: ControlMode,
-    lqr: LqrController,
-    pid_balance: PidBalanceController,
-    mrac: MracController,
-    mpc_counter: u32,
 
     // 状態推定
     theta_filter: LowPassFilter,
     theta_dot_filter: LowPassFilter,
     prev_theta: f32,
     theta_initialized: bool,
-    observer: StateObserver,
 
     // 電流制御（共通パイプライン）
     target_current: f32,
@@ -94,17 +63,18 @@ pub struct ControlSystem {
 
 impl ControlSystem {
     pub fn new() -> Self {
+        ctrl::init_lqr();
+        ctrl::init_pid();
+        ctrl::init_mpc();
+        ctrl::init_mrac();
+        ctrl::init_observer();
+
         Self {
             mode: ControlMode::Lqr,
-            lqr: LqrController::new(),
-            pid_balance: PidBalanceController::new(),
-            mrac: MracController::new(),
-            mpc_counter: 0,
             theta_filter: LowPassFilter::new(BALANCE_DT, THETA_FILTER_CUTOFF),
             theta_dot_filter: LowPassFilter::new(BALANCE_DT, THETA_DOT_FILTER_CUTOFF),
             prev_theta: 0.0,
             theta_initialized: false,
-            observer: StateObserver::new(),
             target_current: 0.0,
             target_voltage: 0.0,
             pid_l: Pid::new(
@@ -133,17 +103,14 @@ impl ControlSystem {
     pub fn set_mode(&mut self, mode: ControlMode) {
         if self.mode != mode {
             self.mode = mode;
-            // 新モードの内部状態をリセット
             match mode {
                 ControlMode::Debug => {}
-                ControlMode::Lqr => self.lqr.reset(),
-                ControlMode::Pid => self.pid_balance.reset(),
-                ControlMode::Mrac => self.mrac.reset(),
-                ControlMode::Mpc => {
-                    crate::tasks::mpc::request_mpc_reset();
-                    self.mpc_counter = 0;
-                }
+                ControlMode::Lqr => ctrl::init_lqr(),
+                ControlMode::Pid => ctrl::init_pid(),
+                ControlMode::Mrac => ctrl::init_mrac(),
+                ControlMode::Mpc => ctrl::init_mpc(),
             }
+            ctrl::init_observer();
         }
     }
 
@@ -151,7 +118,6 @@ impl ControlSystem {
     pub fn update_balance(&mut self, state: &State) {
         // 前処理: 左右平均
         let position = (state.position_r + state.position_l) / 2.0;
-        let _measured_velocity = (state.velocity_r + state.velocity_l) / 2.0;
         let theta = self.theta_filter.update(state.theta);
         let theta_dot_raw = if self.theta_initialized {
             (theta - self.prev_theta) / BALANCE_DT
@@ -162,14 +128,12 @@ impl ControlSystem {
         self.prev_theta = theta;
         let _theta_dot = self.theta_dot_filter.update(theta_dot_raw);
 
-        let estimated = self.observer.update(position, theta, self.target_current);
+        // オブザーバで状態推定
+        // 注意: オブザーバのBd行列は力入力で設計されているため、
+        // target_currentを力に逆変換して渡す（MATLAB simulationと一致）
+        let prev_force = self.target_current / FORCE_TO_CURRENT;
+        let x_hat = ctrl::observer_update(position, theta, prev_force);
 
-        let processed_observer = ProcessedState {
-            position,
-            velocity: estimated.velocity,
-            theta,
-            theta_dot: estimated.theta_dot,
-        };
         // モード依存: 力の計算
         let force = match self.mode {
             ControlMode::Debug => {
@@ -178,37 +142,29 @@ impl ControlSystem {
             }
             ControlMode::Lqr => {
                 self.target_voltage = 0.0;
-                self.lqr.compute_force(&processed_observer)
+                ctrl::lqr_compute(&x_hat)
             }
             ControlMode::Pid => {
                 self.target_voltage = 0.0;
-                self.pid_balance.compute_force(&processed_observer)
+                ctrl::pid_compute(&x_hat)
             }
             ControlMode::Mrac => {
                 self.target_voltage = 0.0;
-                self.mrac.compute_force(&processed_observer)
+                ctrl::mrac_compute(&x_hat)
             }
-            // MPC: 別タスクで非同期計算、50Hzで状態をシグナル
             ControlMode::Mpc => {
                 self.target_voltage = 0.0;
-                if self.mpc_counter == 0 {
-                    crate::tasks::mpc::MPC_STATE_SIGNAL.signal(processed_observer);
-                }
-                crate::tasks::mpc::get_mpc_force()
+                ctrl::mpc_compute(&x_hat)
             }
         };
-        // MPC decimationカウンタ更新
-        if self.mode == ControlMode::Mpc {
-            self.mpc_counter = (self.mpc_counter + 1) % MPC_DECIMATION;
-        }
+
         self.target_current = clamp(force, -MAX_FORCE, MAX_FORCE) * FORCE_TO_CURRENT;
     }
 
-    /// 電流制御ループ (10kHz): 電流PID → デューティ比
+    /// 電流制御ループ (5kHz): 電流PID → デューティ比
     pub fn update_current(&mut self, state: &State) -> MotorOutput {
         let vin = if state.vin > 1.0 { state.vin } else { 7.2 };
 
-        // 電流センサーは絶対値のみ計測するため、電圧コマンドの符号で電流の方向を補正
         let corrected_l = correct_current_sign(state.current_l, self.prev_voltage_l);
         let corrected_r = correct_current_sign(state.current_r, self.prev_voltage_r);
 
@@ -235,7 +191,7 @@ impl ControlSystem {
         self.theta_dot_filter.reset();
         self.prev_theta = 0.0;
         self.theta_initialized = false;
-        self.observer.reset();
+        ctrl::init_observer();
         self.target_current = 0.0;
         self.target_voltage = 0.0;
         self.pid_l.reset();
@@ -244,23 +200,21 @@ impl ControlSystem {
         self.current_filter_r.reset();
         self.prev_voltage_l = 0.0;
         self.prev_voltage_r = 0.0;
-        self.lqr.reset();
-        self.pid_balance.reset();
-        self.mrac.reset();
-        crate::tasks::mpc::request_mpc_reset();
-        self.mpc_counter = 0;
+        match self.mode {
+            ControlMode::Debug => {}
+            ControlMode::Lqr => ctrl::init_lqr(),
+            ControlMode::Pid => ctrl::init_pid(),
+            ControlMode::Mrac => ctrl::init_mrac(),
+            ControlMode::Mpc => ctrl::init_mpc(),
+        }
     }
 }
 
 /// 電流センサーの符号補正
-/// シャント抵抗は電流の絶対値のみ計測するため、
-/// 前回の電圧コマンドの方向から電流の符号を推定する
-/// ゼロ近傍では滑らかに遷移させて不連続を防止
 fn correct_current_sign(measured_current: f32, voltage_command: f32) -> f32 {
     const DEADBAND: f32 = 0.5;
     let abs_current = measured_current.abs();
     if voltage_command.abs() < DEADBAND {
-        // デッドバンド内: 線形補間で滑らかに遷移
         abs_current * (voltage_command / DEADBAND)
     } else if voltage_command > 0.0 {
         abs_current

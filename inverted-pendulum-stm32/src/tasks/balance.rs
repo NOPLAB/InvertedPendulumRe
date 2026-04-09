@@ -2,7 +2,7 @@ use core::sync::atomic::Ordering;
 
 use crate::config::*;
 use crate::controller::{BalanceController, BalanceState, ControlMode};
-use crate::driver::adc::get_theta;
+use crate::driver::adc::{get_theta, get_vin};
 use embassy_time::{Duration, Ticker};
 
 const DEBUG_INTERVAL: u32 = BALANCE_CONTROL_FREQUENCY / 10; // 1kHz / 10Hz = 100
@@ -90,12 +90,13 @@ pub async fn balance_task() {
                     let pos = (position_r + position_l) / 2.0;
                     let vel = (velocity_r + velocity_l) / 2.0;
                     info!(
-                        "th={} pos={} vel={} qR={} qL={}",
+                        "th={} pos={} vel={} qR={} qL={} vin={}",
                         theta,
                         pos,
                         vel,
                         qei_r - qei_r_offset,
                         qei_l - qei_l_offset,
+                        get_vin(),
                     );
                 }
             }

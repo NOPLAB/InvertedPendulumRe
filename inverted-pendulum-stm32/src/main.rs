@@ -84,6 +84,11 @@ async fn main(spawner: Spawner) {
     let mut led = Output::new(p.PB6, Level::Low, Speed::Low);
     let mut button = ExtiInput::new(p.PB5, p.EXTI5, Pull::Up, Irqs);
 
+    // MUX (TC4051BP) チャンネル選択: ch4 = VIN (C=1, B=0, A=0)
+    let _mux_a = Output::new(p.PB4, Level::Low, Speed::Low);
+    let _mux_b = Output::new(p.PB3, Level::Low, Speed::Low);
+    let _mux_c = Output::new(p.PA12, Level::High, Speed::Low);
+
     // ADC
     let adc1 = Adc::new(p.ADC1, Irqs);
     let adc2 = Adc::new(p.ADC2, Irqs);

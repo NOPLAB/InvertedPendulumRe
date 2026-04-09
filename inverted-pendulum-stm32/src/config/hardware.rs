@@ -35,8 +35,8 @@ pub const PULSE_TO_POSITION: f32 =
 // Motor PWM
 pub const MOTOR_PWM_FREQUENCY: u32 = 50_000; // [Hz]
 
-// 電源電圧分圧比 (10kΩ + 3.3kΩ 分圧回路)
-pub const VIN_DIVIDER_GAIN: f32 = (10.0 + 3.3) / 3.3; // ADC電圧 → 実電圧
+// 電源電圧分圧比 (2.4kΩ + 750Ω 分圧回路: R10, R13)
+pub const VIN_DIVIDER_GAIN: f32 = (2400.0 + 750.0) / 750.0; // ADC電圧 → 実電圧
 
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {

@@ -8,4 +8,5 @@ slprj/
 *.mexa64
 *.mexmaci64
 *.mexmaca64
+codegen/
 sim/mex/html/

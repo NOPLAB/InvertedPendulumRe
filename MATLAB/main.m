@@ -7,6 +7,7 @@ addpath(fullfile(rootDir, 'plant'));
 addpath(genpath(fullfile(rootDir, 'control')));
 addpath(fullfile(rootDir, 'sim'));
 addpath(fullfile(rootDir, 'simulink'));
+addpath(fullfile(rootDir, 'sim', 'mex'));
 
 %% 1. パラメータ読込
 p = params();

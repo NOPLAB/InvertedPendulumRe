@@ -140,16 +140,14 @@ classdef FirmwareExperiment
             runtime.motor_prev_voltage = 0.0;
             runtime.observer = FirmwareExperiment.init_observer(opts.observer);
 
+            % コード生成された制御器の初期化（persistent変数リセット）
             switch obj.mode_name
                 case 'pid'
-                    pid_api = step_pid();
-                    runtime.balance_pid = pid_api.init( ...
-                        obj.ctrl_param, balance_dt, opts.max_force);
+                    pid_step_mex('reset');
                 case 'mrac'
-                    mrac_api = step_mrac();
-                    runtime.mrac = mrac_api.init(obj.ctrl_param);
+                    mrac_step_mex('reset');
                 case 'mpc'
-                    runtime.mpc_state = [];  % ADMM warm-start (初回は空)
+                    mpc_step_mex('reset');
                     runtime.mpc_counter = 0;
                     runtime.mpc_force = 0.0;
                     runtime.mpc_decimation = 1;
@@ -243,8 +241,11 @@ classdef FirmwareExperiment
             runtime.theta_dot_filter = util.lpf_update(runtime.theta_dot_filter, theta_dot_raw);
             theta_dot_direct = runtime.theta_dot_filter.output;
 
-            [runtime.observer, observer_velocity, observer_theta_dot] = FirmwareExperiment.update_observer( ...
-                runtime.observer, position, theta, runtime.target_current, obj.p);
+            % オブザーバ（MEX経由）
+            observer_force = runtime.target_current / FirmwareExperiment.force_to_current(obj.p);
+            x_hat = observer_step_mex(single(position), single(theta), single(observer_force));
+            observer_velocity = double(x_hat(2));
+            observer_theta_dot = double(x_hat(4));
 
             signed_current = FirmwareExperiment.correct_current_sign( ...
                 abs(runtime.current_actual), runtime.motor_prev_voltage);
@@ -260,26 +261,19 @@ classdef FirmwareExperiment
                     current_state = NaN;
 
                 case 'pid'
-                    processed = struct( ...
-                        'position', position, ...
-                        'velocity', observer_velocity, ...
-                        'theta', theta, ...
-                        'theta_dot', observer_theta_dot);
-                    pid_api = step_pid();
-                    [force, runtime.balance_pid] = pid_api.step( ...
-                        runtime.balance_pid, processed);
+                    x_ctrl = single([position; observer_velocity; theta; observer_theta_dot]);
+                    force = double(pid_step_mex(x_ctrl));
                     runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
-                    velocity_est = processed.velocity;
-                    theta_dot_est = processed.theta_dot;
+                    velocity_est = observer_velocity;
+                    theta_dot_est = observer_theta_dot;
                     current_used = NaN;
                     current_state = NaN;
 
                 case 'lqr'
-                    x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
-                    lqr_api = step_lqr();
-                    force = lqr_api.step(obj.ctrl_param, x_ctrl);
+                    x_ctrl = single([position; observer_velocity; theta; observer_theta_dot]);
+                    force = double(lqr_step_mex(x_ctrl));
                     runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
@@ -289,28 +283,20 @@ classdef FirmwareExperiment
                     current_state = NaN;
 
                 case 'mrac'
-                    processed = struct( ...
-                        'position', position, ...
-                        'velocity', observer_velocity, ...
-                        'theta', theta, ...
-                        'theta_dot', observer_theta_dot);
-                    mrac_api = step_mrac();
-                    [force, runtime.mrac] = mrac_api.step( ...
-                        runtime.mrac, processed, balance_dt, obj.options.max_force);
+                    x_ctrl = single([position; observer_velocity; theta; observer_theta_dot]);
+                    force = double(mrac_step_mex(x_ctrl));
                     runtime.target_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     runtime.target_current = runtime.target_force * FirmwareExperiment.force_to_current(obj.p);
                     runtime.target_voltage = 0.0;
-                    velocity_est = processed.velocity;
-                    theta_dot_est = processed.theta_dot;
+                    velocity_est = observer_velocity;
+                    theta_dot_est = observer_theta_dot;
                     current_used = NaN;
                     current_state = NaN;
 
                 case 'mpc'
-                    x_ctrl = [position; observer_velocity; theta; observer_theta_dot];
+                    x_ctrl = single([position; observer_velocity; theta; observer_theta_dot]);
                     if runtime.mpc_counter == 0
-                        mpc_api = step_mpc();
-                        [force, runtime.mpc_state] = mpc_api.step( ...
-                            obj.ctrl_param, x_ctrl, runtime.mpc_state);
+                        force = double(mpc_step_mex(x_ctrl));
                         runtime.mpc_force = util.clamp(force, -obj.options.max_force, obj.options.max_force);
                     end
                     runtime.target_force = runtime.mpc_force;

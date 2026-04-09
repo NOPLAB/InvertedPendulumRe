@@ -29,7 +29,7 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     K_const = coder.Constant(K_s);
     lib_lqr = fullfile(lib_base, 'lqr_step');
     codegen('lqr_step', '-args', {K_const, state_type}, '-config', cfg_lib, '-d', lib_lqr)
-    codegen('lqr_step', '-args', {K_const, state_type}, '-config', cfg_mex, '-d', mex_output)
+    codegen('lqr_step', '-args', {K_const, state_type}, '-config', cfg_mex, '-o', fullfile(mex_output, 'lqr_step_mex'))
     fprintf('  LQR: done\n');
 
     %% 2. PID
@@ -40,7 +40,7 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     maxf_const = coder.Constant(single(10.0));
     lib_pid = fullfile(lib_base, 'pid_step');
     codegen('pid_step', '-args', {pid_const, dt_const, maxf_const, state_type}, '-config', cfg_lib, '-d', lib_pid)
-    codegen('pid_step', '-args', {pid_const, dt_const, maxf_const, state_type}, '-config', cfg_mex, '-d', mex_output)
+    codegen('pid_step', '-args', {pid_const, dt_const, maxf_const, state_type}, '-config', cfg_mex, '-o', fullfile(mex_output, 'pid_step_mex'))
     fprintf('  PID: done\n');
 
     %% 3. MPC
@@ -55,7 +55,7 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     mpc_args = {N_const, rho_const, iter_const, umin_const, umax_const, H_const, F_const, state_type};
     lib_mpc = fullfile(lib_base, 'mpc_step');
     codegen('mpc_step', '-args', mpc_args, '-config', cfg_lib, '-d', lib_mpc)
-    codegen('mpc_step', '-args', mpc_args, '-config', cfg_mex, '-d', mex_output)
+    codegen('mpc_step', '-args', mpc_args, '-config', cfg_mex, '-o', fullfile(mex_output, 'mpc_step_mex'))
     fprintf('  MPC: done\n');
 
     %% 4. MRAC
@@ -64,7 +64,7 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     mrac_const = coder.Constant(mrac_s);
     lib_mrac = fullfile(lib_base, 'mrac_step');
     codegen('mrac_step', '-args', {mrac_const, dt_const, maxf_const, state_type}, '-config', cfg_lib, '-d', lib_mrac)
-    codegen('mrac_step', '-args', {mrac_const, dt_const, maxf_const, state_type}, '-config', cfg_mex, '-d', mex_output)
+    codegen('mrac_step', '-args', {mrac_const, dt_const, maxf_const, state_type}, '-config', cfg_mex, '-o', fullfile(mex_output, 'mrac_step_mex'))
     fprintf('  MRAC: done\n');
 
     %% 5. Observer
@@ -76,7 +76,7 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     obs_args = {Ad_const, Bd_const, Ld_const, scalar_type, scalar_type, scalar_type};
     lib_obs = fullfile(lib_base, 'observer_step');
     codegen('observer_step', '-args', obs_args, '-config', cfg_lib, '-d', lib_obs)
-    codegen('observer_step', '-args', obs_args, '-config', cfg_mex, '-d', mex_output)
+    codegen('observer_step', '-args', obs_args, '-config', cfg_mex, '-o', fullfile(mex_output, 'observer_step_mex'))
     fprintf('  Observer: done\n');
 
     fprintf('\n=== Code Generation Complete ===\n');

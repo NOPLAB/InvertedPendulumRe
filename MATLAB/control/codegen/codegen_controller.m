@@ -9,11 +9,11 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     %% 出力先パス（codegen は '..' を含むパスでエラーになるため解決済みパスを使用）
     root_dir = fileparts(fileparts(fileparts(mfilename('fullpath'))));
     repo_root = fileparts(root_dir);
-    lib_output = fullfile(repo_root, 'inverted-pendulum-controller', 'codegen');
+    lib_base = fullfile(repo_root, 'inverted-pendulum-controller', 'codegen');
     mex_output = fullfile(root_dir, 'sim', 'mex');
 
     % 出力ディレクトリ作成
-    if ~exist(lib_output, 'dir'), mkdir(lib_output); end
+    if ~exist(lib_base, 'dir'), mkdir(lib_base); end
     if ~exist(mex_output, 'dir'), mkdir(mex_output); end
 
     [cfg_lib, cfg_mex] = codegen_config();
@@ -27,7 +27,8 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     fprintf('Generating LQR...\n');
     K_s = single(K_lqr);
     K_const = coder.Constant(K_s);
-    codegen('lqr_step', '-args', {K_const, state_type}, '-config', cfg_lib, '-d', lib_output)
+    lib_lqr = fullfile(lib_base, 'lqr_step');
+    codegen('lqr_step', '-args', {K_const, state_type}, '-config', cfg_lib, '-d', lib_lqr)
     codegen('lqr_step', '-args', {K_const, state_type}, '-config', cfg_mex, '-d', mex_output)
     fprintf('  LQR: done\n');
 
@@ -37,7 +38,8 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     pid_const = coder.Constant(pid_s);
     dt_const = coder.Constant(single(0.001));  % 1kHz balance loop
     maxf_const = coder.Constant(single(10.0));
-    codegen('pid_step', '-args', {pid_const, dt_const, maxf_const, state_type}, '-config', cfg_lib, '-d', lib_output)
+    lib_pid = fullfile(lib_base, 'pid_step');
+    codegen('pid_step', '-args', {pid_const, dt_const, maxf_const, state_type}, '-config', cfg_lib, '-d', lib_pid)
     codegen('pid_step', '-args', {pid_const, dt_const, maxf_const, state_type}, '-config', cfg_mex, '-d', mex_output)
     fprintf('  PID: done\n');
 
@@ -51,7 +53,8 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     H_const = coder.Constant(single(mpc_params.H_inv_rho));
     F_const = coder.Constant(single(mpc_params.F));
     mpc_args = {N_const, rho_const, iter_const, umin_const, umax_const, H_const, F_const, state_type};
-    codegen('mpc_step', '-args', mpc_args, '-config', cfg_lib, '-d', lib_output)
+    lib_mpc = fullfile(lib_base, 'mpc_step');
+    codegen('mpc_step', '-args', mpc_args, '-config', cfg_lib, '-d', lib_mpc)
     codegen('mpc_step', '-args', mpc_args, '-config', cfg_mex, '-d', mex_output)
     fprintf('  MPC: done\n');
 
@@ -59,7 +62,8 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     fprintf('Generating MRAC...\n');
     mrac_s = to_single_mrac(mrac_params);
     mrac_const = coder.Constant(mrac_s);
-    codegen('mrac_step', '-args', {mrac_const, dt_const, maxf_const, state_type}, '-config', cfg_lib, '-d', lib_output)
+    lib_mrac = fullfile(lib_base, 'mrac_step');
+    codegen('mrac_step', '-args', {mrac_const, dt_const, maxf_const, state_type}, '-config', cfg_lib, '-d', lib_mrac)
     codegen('mrac_step', '-args', {mrac_const, dt_const, maxf_const, state_type}, '-config', cfg_mex, '-d', mex_output)
     fprintf('  MRAC: done\n');
 
@@ -70,12 +74,13 @@ function codegen_controller(K_lqr, pid_gains, mpc_params, mrac_params, obs_param
     Ld_const = coder.Constant(single(obs_params.Ld));
     scalar_type = coder.typeof(single(0));
     obs_args = {Ad_const, Bd_const, Ld_const, scalar_type, scalar_type, scalar_type};
-    codegen('observer_step', '-args', obs_args, '-config', cfg_lib, '-d', lib_output)
+    lib_obs = fullfile(lib_base, 'observer_step');
+    codegen('observer_step', '-args', obs_args, '-config', cfg_lib, '-d', lib_obs)
     codegen('observer_step', '-args', obs_args, '-config', cfg_mex, '-d', mex_output)
     fprintf('  Observer: done\n');
 
     fprintf('\n=== Code Generation Complete ===\n');
-    fprintf('C library: %s\n', lib_output);
+    fprintf('C library: %s\n', lib_base);
     fprintf('MEX files: %s\n', mex_output);
 end
 

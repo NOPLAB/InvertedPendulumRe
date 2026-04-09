@@ -1,3 +1,11 @@
 *.slx.autosave
 *.slxc
 slprj/
+
+# MATLAB Coder / MEX artifacts
+*.mex*
+*.mexw64
+*.mexa64
+*.mexmaci64
+*.mexmaca64
+sim/mex/html/

@@ -7,7 +7,7 @@ mod driver;
 mod fmt;
 mod tasks;
 
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8, Ordering};
 
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
@@ -31,7 +31,7 @@ use embassy_stm32::{
 use embassy_time::Timer;
 use driver::encoder::Qei;
 use driver::motor::Motors;
-use tasks::control::control_task;
+use tasks::balance::balance_task;
 use tasks::encoder::{encoder_l_task, encoder_r_task};
 
 bind_interrupts!(struct Irqs {
@@ -48,6 +48,7 @@ pub(crate) static QEI_R: AtomicI32 = AtomicI32::new(0);
 pub(crate) static QEI_L: AtomicI32 = AtomicI32::new(0);
 pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
 pub(crate) static CONTROL_MODE: AtomicU8 = AtomicU8::new(2); // デフォルト: LQR (2)
+pub(crate) static TARGET_CURRENT: AtomicU32 = AtomicU32::new(0); // f32 bits: バランス→電流タスク間
 
 /// LED点滅でモード番号を表示
 async fn blink_mode(led: &mut Output<'_>, count: u8) {
@@ -159,7 +160,8 @@ async fn main(spawner: Spawner) {
     spawner.spawn(tasks::uart::uart_tx_task(uart_tx).unwrap());
     spawner.spawn(tasks::uart::uart_rx_task(uart_rx).unwrap());
 
-    spawner.spawn(control_task(motors).unwrap());
+    tasks::current::init(p.TIM6, motors);
+    spawner.spawn(balance_task().unwrap());
 
     // 起動時に現在モードを点滅表示
     let mode = CONTROL_MODE.load(Ordering::Relaxed);

@@ -35,6 +35,9 @@ pub const PULSE_TO_POSITION: f32 =
 // Motor PWM
 pub const MOTOR_PWM_FREQUENCY: u32 = 50_000; // [Hz]
 
+// 電源電圧分圧比 (10kΩ + 3.3kΩ 分圧回路)
+pub const VIN_DIVIDER_GAIN: f32 = (10.0 + 3.3) / 3.3; // ADC電圧 → 実電圧
+
 // Utility functions
 pub fn adc_to_radians(ad_value: u16, zero_offset: u16) -> f32 {
     let normalized_ad = (ad_value as f32) / (ADC_RESOLUTION as f32);
@@ -50,6 +53,11 @@ pub fn adc_to_current(adc_value: u16) -> f32 {
 pub fn adc_to_current_with_offset(adc_value: u16, offset: u16) -> f32 {
     let compensated = adc_value.saturating_sub(offset);
     adc_to_current(compensated)
+}
+
+pub fn adc_to_vin(adc_value: u16) -> f32 {
+    let normalized = (adc_value as f32) / (ADC_RESOLUTION as f32);
+    normalized * ADC_VREF * VIN_DIVIDER_GAIN
 }
 
 pub fn pulses_to_position(pulses: i32) -> f32 {

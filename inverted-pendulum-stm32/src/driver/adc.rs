@@ -21,22 +21,26 @@ impl AdcSensors {
     pub async fn read(
         &mut self,
         theta_pin: &mut Peri<'static, peripherals::PB0>,
+        vin_pin: &mut Peri<'static, peripherals::PA0>,
         current_r_pin: &mut Peri<'static, peripherals::PA5>,
         current_l_pin: &mut Peri<'static, peripherals::PA7>,
     ) {
         let theta_raw = self.adc1.read(theta_pin, SampleTime::CYCLES601_5).await;
+        let vin_raw = self.adc1.read(vin_pin, SampleTime::CYCLES601_5).await;
         let current_r_raw = self.adc2.read(current_r_pin, SampleTime::CYCLES601_5).await;
         let current_l_raw = self.adc2.read(current_l_pin, SampleTime::CYCLES601_5).await;
 
         let packed = ((theta_raw as u32) << 16) | (current_r_raw as u32);
         ADC_DATA_HIGH.store(packed, Ordering::Relaxed);
         ADC_DATA_LOW.store(current_l_raw as u32, Ordering::Relaxed);
+        ADC_VIN.store(vin_raw, Ordering::Relaxed);
     }
 }
 
 // Atomic storage for lock-free ADC access
 static ADC_DATA_HIGH: AtomicU32 = AtomicU32::new(0); // theta_raw | current_r_raw
 static ADC_DATA_LOW: AtomicU32 = AtomicU32::new(0); // current_l_raw
+static ADC_VIN: AtomicU16 = AtomicU16::new(0); // 電源電圧ADC値
 static THETA_OFFSET: AtomicU16 = AtomicU16::new(0);
 static CURRENT_R_OFFSET: AtomicU16 = AtomicU16::new(0);
 static CURRENT_L_OFFSET: AtomicU16 = AtomicU16::new(0);
@@ -61,6 +65,11 @@ pub fn get_theta() -> f32 {
     adc_to_radians(raw, offset)
 }
 
+pub fn get_vin() -> f32 {
+    let raw = ADC_VIN.load(Ordering::Relaxed);
+    adc_to_vin(raw)
+}
+
 pub fn get_currents() -> (f32, f32) {
     let high = ADC_DATA_HIGH.load(Ordering::Relaxed);
     let low = ADC_DATA_LOW.load(Ordering::Relaxed);
@@ -76,12 +85,13 @@ pub fn get_currents() -> (f32, f32) {
 pub async fn adc_task(
     mut sensors: AdcSensors,
     mut theta_pin: Peri<'static, peripherals::PB0>,
+    mut vin_pin: Peri<'static, peripherals::PA0>,
     mut current_r_pin: Peri<'static, peripherals::PA5>,
     mut current_l_pin: Peri<'static, peripherals::PA7>,
 ) -> ! {
     loop {
         sensors
-            .read(&mut theta_pin, &mut current_r_pin, &mut current_l_pin)
+            .read(&mut theta_pin, &mut vin_pin, &mut current_r_pin, &mut current_l_pin)
             .await;
     }
 }

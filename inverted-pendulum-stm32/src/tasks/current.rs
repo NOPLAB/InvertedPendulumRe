@@ -7,7 +7,7 @@ use embassy_stm32::pac;
 use embassy_stm32::interrupt;
 
 use crate::controller::{CurrentController, CurrentState};
-use crate::driver::adc::get_currents;
+use crate::driver::adc::{get_currents, get_vin};
 use crate::driver::motor::Motors;
 
 struct CurrentControlState {
@@ -83,7 +83,7 @@ unsafe fn TIM6_DAC1() {
                 let cur_state = CurrentState {
                     current_r,
                     current_l,
-                    vin: 12.0,
+                    vin: get_vin(),
                 };
 
                 let output = state.controller.update(target_current, &cur_state);

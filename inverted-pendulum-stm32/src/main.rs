@@ -88,7 +88,7 @@ async fn main(spawner: Spawner) {
     let adc1 = Adc::new(p.ADC1, Irqs);
     let adc2 = Adc::new(p.ADC2, Irqs);
 
-    spawner.spawn(adc_task(AdcSensors::new(adc1, adc2), p.PB0, p.PA5, p.PA7).unwrap());
+    spawner.spawn(adc_task(AdcSensors::new(adc1, adc2), p.PB0, p.PA0, p.PA5, p.PA7).unwrap());
     Timer::after_millis(20).await;
     calibrate_current();
 

@@ -36,12 +36,13 @@ fn main() {
         }
     }
 
-    // 生成されたCソースをコンパイル
+    // 生成されたCソースをコンパイル（interface/ディレクトリはMEX用なので除外）
     let c_files: Vec<PathBuf> = glob::glob(
         codegen_dir.join("**").join("*.c").to_str().unwrap()
     )
     .expect("Failed to glob codegen directory")
     .filter_map(|e| e.ok())
+    .filter(|p| !p.components().any(|c| c.as_os_str() == "interface"))
     .collect();
 
     if c_files.is_empty() {
@@ -62,9 +63,14 @@ fn main() {
         }
     }
 
+    // GCC/Clangターゲット（ARM組み込み）の場合のみfreestandingフラグ追加
+    let target = env::var("TARGET").unwrap_or_default();
+    if !target.contains("msvc") {
+        build.flag("-ffreestanding");
+        build.flag("-fno-builtin");
+    }
+
     build
-        .flag("-ffreestanding")
-        .flag("-fno-builtin")
         .warnings(false)
         .compile("controller");
 }
